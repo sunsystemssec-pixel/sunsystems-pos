@@ -30,11 +30,14 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Copy Web Assets to Android
+        run: |
+          mkdir -p android/app/src/main/assets/public
+          cp -r dist/* android/app/src/main/assets/public/
+          cp capacitor.config.json android/app/src/main/assets/capacitor.config.json
+
       - name: Make Gradlew Executable
         run: chmod +x android/gradlew
-
-      - name: Copy Web Assets to Android
-        run: npx cap copy android
 
       - name: Build Debug APK with Gradle
         run: |
