@@ -1,0 +1,26 @@
+# Node dependencies
+node_modules/
+.npm
+
+# Build outputs
+dist/
+build/
+
+# Android build files
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.apk
+*.aab
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
