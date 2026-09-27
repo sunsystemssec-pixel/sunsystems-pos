@@ -42,7 +42,21 @@ jobs:
       - name: Build Debug APK with Gradle
         run: |
           cd android
-          ./gradlew assembleDebug --no-daemon
+          if ! ./gradlew assembleDebug --no-daemon --stacktrace > ../gradle_build.log 2>&1; then
+            echo "::error::Gradle build failed. Showing logs:"
+            cat ../gradle_build.log
+            exit 1
+          fi
+          echo "Gradle build completed successfully!"
+          cat ../gradle_build.log | tail -n 30
+
+      - name: Publish Step Summary
+        if: always()
+        run: |
+          echo "### Gradle Output" >> $GITHUB_STEP_SUMMARY
+          echo '```text' >> $GITHUB_STEP_SUMMARY
+          tail -n 80 gradle_build.log >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: Upload Sun Systems APK
         uses: actions/upload-artifact@v4
