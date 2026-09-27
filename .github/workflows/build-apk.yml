@@ -30,16 +30,16 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Ensure Executable Permission for Gradlew
-        run: chmod +x ./android/gradlew
+      - name: Make Gradlew Executable
+        run: chmod +x android/gradlew
 
-      - name: Sync Capacitor Android
-        run: npx cap sync android
+      - name: Copy Web Assets to Android
+        run: npx cap copy android
 
-      - name: Build Debug APK
+      - name: Build Debug APK with Gradle
         run: |
           cd android
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Prepare APK Output
         run: |
