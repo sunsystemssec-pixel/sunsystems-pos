@@ -42,30 +42,10 @@ jobs:
       - name: Build Debug APK with Gradle
         run: |
           cd android
-          ./gradlew assembleDebug --no-daemon 2>&1 | tee ../gradle.log
+          ./gradlew assembleDebug --no-daemon
 
-      - name: Diagnostic Output on Failure
-        if: failure()
-        run: |
-          echo "=== GRADLE FAILURE DIAGNOSTICS ==="
-          cat gradle.log | grep -A 25 -B 5 "FAILURE:" || true
-          echo "=== LAST 100 LINES OF GRADLE LOG ==="
-          tail -n 100 gradle.log
-
-      - name: Upload Gradle Log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gradle-build-log
-          path: gradle.log
-
-      - name: Prepare APK Output
-        run: |
-          mkdir -p output
-          cp android/app/build/outputs/apk/debug/app-debug.apk output/SunSystems-POS.apk
-
-      - name: Upload APK Artifact
+      - name: Upload Sun Systems APK
         uses: actions/upload-artifact@v4
         with:
           name: SunSystems-POS-APK
-          path: output/SunSystems-POS.apk
+          path: android/**/*.apk
