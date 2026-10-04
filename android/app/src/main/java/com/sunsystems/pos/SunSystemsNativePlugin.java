@@ -197,4 +197,40 @@ public class SunSystemsNativePlugin extends Plugin {
             call.resolve(ret);
         }
     }
+
+    @PluginMethod
+    public void print(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            try {
+                android.print.PrintManager printManager = (android.print.PrintManager) getActivity().getSystemService(android.content.Context.PRINT_SERVICE);
+                if (printManager == null) {
+                    JSObject ret = new JSObject();
+                    ret.put("success", false);
+                    ret.put("error", "Print service not available on this device");
+                    call.resolve(ret);
+                    return;
+                }
+
+                String jobName = call.getString("jobName", "SunSystems_Invoice_" + System.currentTimeMillis());
+                android.print.PrintDocumentAdapter printAdapter = getBridge().getWebView().createPrintDocumentAdapter(jobName);
+
+                android.print.PrintAttributes printAttributes = new android.print.PrintAttributes.Builder()
+                    .setMediaSize(android.print.PrintAttributes.MediaSize.ISO_A4)
+                    .setColorMode(android.print.PrintAttributes.COLOR_MODE_COLOR)
+                    .setMinMargins(android.print.PrintAttributes.Margins.NO_MARGINS)
+                    .build();
+
+                printManager.print(jobName, printAdapter, printAttributes);
+
+                JSObject ret = new JSObject();
+                ret.put("success", true);
+                call.resolve(ret);
+            } catch (Exception e) {
+                JSObject ret = new JSObject();
+                ret.put("success", false);
+                ret.put("error", e.getMessage());
+                call.resolve(ret);
+            }
+        });
+    }
 }

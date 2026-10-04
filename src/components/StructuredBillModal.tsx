@@ -57,7 +57,17 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
     }
   }
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
+    if (isNativeApp()) {
+      try {
+        const res = await SunSystemsNative.print({ jobName: `SunSystems_Invoice_${invoiceNumber}` });
+        if (res && res.success) {
+          return;
+        }
+      } catch (err) {
+        console.warn('Native print failed, falling back to window.print():', err);
+      }
+    }
     window.print();
   };
 
@@ -65,24 +75,51 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
     const billEl = document.getElementById('printable-bill');
     if (!billEl) return null;
 
+    // Capture in standard A4 width (794px at 96 DPI)
     const canvas = await html2canvas(billEl, {
       scale: 2,
       useCORS: true,
       backgroundColor: '#ffffff',
-      logging: false
+      logging: false,
+      windowWidth: 794,
+      onclone: (clonedDoc) => {
+        const clonedBill = clonedDoc.getElementById('printable-bill');
+        if (clonedBill) {
+          clonedBill.style.width = '794px';
+          clonedBill.style.maxWidth = '794px';
+          clonedBill.style.margin = '0 auto';
+          clonedBill.style.padding = '24px 32px';
+          clonedBill.style.boxSizing = 'border-box';
+        }
+      }
     });
 
     const imgData = canvas.toDataURL('image/png');
-    const pdf = new jsPDF('p', 'mm', 'a4');
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const imgHeight = (canvas.height * pageWidth) / canvas.width;
+    // Initialize standard A4 PDF (210mm x 297mm)
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
 
-    if (imgHeight > pageHeight) {
-      const scaleRatio = pageHeight / imgHeight;
-      pdf.addImage(imgData, 'PNG', 0, 0, pageWidth * scaleRatio, pageHeight);
+    const pageWidth = pdf.internal.pageSize.getWidth(); // 210mm
+    const pageHeight = pdf.internal.pageSize.getHeight(); // 297mm
+
+    // Standard 10mm margins for clean A4 printing layout
+    const margin = 10;
+    const printWidth = pageWidth - (margin * 2); // 190mm
+    const printHeight = (canvas.height * printWidth) / canvas.width;
+
+    if (printHeight > (pageHeight - margin * 2)) {
+      // Fit strictly within single A4 page boundary
+      const fitHeight = pageHeight - (margin * 2);
+      const fitWidth = (canvas.width * fitHeight) / canvas.height;
+      const xOffset = (pageWidth - fitWidth) / 2;
+      pdf.addImage(imgData, 'PNG', xOffset, margin, fitWidth, fitHeight);
     } else {
-      pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, imgHeight);
+      // Centered with 10mm margins
+      const xOffset = (pageWidth - printWidth) / 2;
+      pdf.addImage(imgData, 'PNG', xOffset, margin, printWidth, printHeight);
     }
 
     const fileName = `SunSystems_Invoice_${invoiceNumber}.pdf`;

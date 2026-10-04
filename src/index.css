@@ -37,7 +37,7 @@ body {
 /* Clean Print Invoice Rules - STRICT SINGLE PAGE */
 @media print {
   @page {
-    size: portrait;
+    size: A4 portrait;
     margin: 8mm 10mm;
   }
   html, body {

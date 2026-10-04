@@ -1,4 +1,4 @@
-﻿import { registerPlugin, Capacitor } from '@capacitor/core';
+import { registerPlugin, Capacitor } from '@capacitor/core';
 
 export interface SunSystemsNativePlugin {
   isBiometricAvailable(): Promise<{ available: boolean; reason?: string }>;
@@ -12,6 +12,9 @@ export interface SunSystemsNativePlugin {
     fileName: string;
     caption?: string;
     phone?: string;
+  }): Promise<{ success: boolean; error?: string }>;
+  print(options?: {
+    jobName?: string;
   }): Promise<{ success: boolean; error?: string }>;
 }
 
