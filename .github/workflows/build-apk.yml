@@ -9,6 +9,8 @@ jobs:
   build:
     name: Build Sun Systems APK
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -49,8 +51,29 @@ jobs:
           cd android
           ./gradlew assembleDebug --no-daemon
 
-      - name: Upload Sun Systems APK
+      - name: Prepare Direct APK Asset
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk SunSystems-POS-latest.apk
+
+      - name: Upload Sun Systems APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: SunSystems-POS-APK
-          path: android/**/*.apk
+          path: SunSystems-POS-latest.apk
+
+      - name: Publish Direct APK to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/heads/main')
+        with:
+          tag_name: latest
+          name: "Sun Systems POS - Latest Release"
+          body: |
+            ### Sun Systems POS - Latest Direct APK Download
+            Direct, uncompressed APK download with fingerprint biometric scanner and WhatsApp PDF direct sharing.
+            
+            **Installation instructions**:
+            - Tap `SunSystems-POS-latest.apk` below to download directly (no unzipping required!).
+            - If you had a previous version installed, uninstall it first once, then tap to install.
+          files: SunSystems-POS-latest.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

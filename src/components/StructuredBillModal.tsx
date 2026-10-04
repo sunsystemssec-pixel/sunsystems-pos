@@ -6,6 +6,7 @@ import { formatToDDMMYY, generateWhatsAppSaleMessage, openWhatsAppInvoice, getCl
 import { X, Printer, MessageCircle, Copy, Check, Plus, Smartphone, FileText, Download, Loader2 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import { SunSystemsNative, isNativeApp } from '../services/nativeBridge';
 
 interface StructuredBillModalProps {
   sale: Sale;
@@ -99,19 +100,64 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
       }
 
       const { blob, fileName } = res;
-      const file = new File([blob], fileName, { type: 'application/pdf' });
 
-      // If Native Web Share API supports file sharing (Mobile Android / Chrome)
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: `Tax Invoice ${invoiceNumber}`,
-          text: `Tax Invoice ${invoiceNumber} from Sun Systems`
-        });
-        return;
+      // 1. Android Native App: Share PDF directly via native FileProvider intent to WhatsApp
+      if (isNativeApp()) {
+        try {
+          const reader = new FileReader();
+          const base64Promise = new Promise<string>((resolve, reject) => {
+            reader.onloadend = () => {
+              if (reader.result) {
+                resolve(reader.result as string);
+              } else {
+                reject(new Error('Failed to read PDF blob'));
+              }
+            };
+            reader.onerror = reject;
+          });
+          reader.readAsDataURL(blob);
+          const base64Data = await base64Promise;
+
+          const clean = getCleanWhatsAppNumber(targetPhone);
+          const caption = `Sun Systems CTC - Tax Invoice ${invoiceNumber} (₹${sale.finalAmount.toLocaleString('en-IN')})`;
+
+          const shareRes = await SunSystemsNative.sharePdf({
+            base64Data,
+            fileName,
+            caption,
+            phone: clean
+          });
+
+          if (shareRes && shareRes.success) {
+            setIsGeneratingPdf(false);
+            return;
+          }
+        } catch (nativeErr) {
+          console.warn('Native share failed, trying Web Share fallback:', nativeErr);
+        }
       }
 
-      // Desktop browser fallback: Download PDF and open WhatsApp Web with invoice details
+      // 2. Mobile Browser Web Share API (HTTPS Chrome / Safari)
+      const file = new File([blob], fileName, { type: 'application/pdf' });
+      if (typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: `Tax Invoice ${invoiceNumber}`,
+            text: `Tax Invoice ${invoiceNumber} from Sun Systems CTC`
+          });
+          setIsGeneratingPdf(false);
+          return;
+        } catch (shareErr: any) {
+          if (shareErr.name === 'AbortError') {
+            setIsGeneratingPdf(false);
+            return;
+          }
+        }
+      }
+
+      // 3. Fallback for Desktop browser or HTTP:
+      // Download PDF directly
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -122,7 +168,7 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
       URL.revokeObjectURL(url);
 
       const clean = getCleanWhatsAppNumber(targetPhone);
-      const promptMsg = `Greetings from Sun Systems CTC!\nTax Invoice ${invoiceNumber} for ₹${sale.finalAmount.toLocaleString('en-IN')} has been generated.\nPDF file ${fileName} is downloaded to your device for customer sharing.`;
+      const promptMsg = `Greetings from Sun Systems CTC!\nTax Invoice ${invoiceNumber} for ₹${sale.finalAmount.toLocaleString('en-IN')} has been generated and the PDF invoice is downloaded to your device.\n\n*Note: Please tap 📎 Paperclip in WhatsApp to attach the downloaded PDF invoice.*`;
       const shareUrl = clean
         ? `https://api.whatsapp.com/send?phone=${clean}&text=${encodeURIComponent(promptMsg)}`
         : `https://api.whatsapp.com/send?text=${encodeURIComponent(promptMsg)}`;

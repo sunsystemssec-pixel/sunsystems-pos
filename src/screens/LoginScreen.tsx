@@ -4,6 +4,7 @@ import { db } from '../services/db';
 import { sunAI } from '../services/sunAI';
 import { COMPANY_INFO } from '../data/seedData';
 import { Lock, User as UserIcon, Check, Shield, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { SunSystemsNative, isNativeApp } from '../services/nativeBridge';
 
 interface LoginScreenProps {
   onLogin: (user: User) => void;
@@ -122,22 +123,44 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
       return;
     }
 
-    // Check if secure context is available (required by browsers for hardware biometrics)
-    if (typeof window !== 'undefined' && !window.isSecureContext) {
-      setErrorMsg('Mobile hardware sensor requires HTTPS or localhost. Please enter your PIN to login.');
-      setActiveField('PIN');
-      return;
-    }
-
-    if (typeof window === 'undefined' || !window.PublicKeyCredential || !navigator.credentials) {
-      setErrorMsg('Hardware biometric sensor is not supported on this browser. Please enter PIN.');
-      setActiveField('PIN');
-      return;
-    }
-
     setBiometricScanning(true);
 
     try {
+      // 1. Android Native App: Prompt phone's hardware biometric sensor (fingerprint/face)
+      if (isNativeApp()) {
+        const nativeAuth = await SunSystemsNative.authenticateBiometric({
+          title: 'Sun Systems Biometric Login',
+          subtitle: `Verify fingerprint to authenticate as ${matchedUser.name}`,
+          negativeButtonText: 'Use PIN'
+        });
+
+        if (nativeAuth && nativeAuth.success) {
+          setBiometricScanning(false);
+          completeLogin(matchedUser);
+          return;
+        } else {
+          setErrorMsg(nativeAuth?.error || 'Fingerprint verification cancelled. Please enter PIN.');
+          setBiometricScanning(false);
+          setActiveField('PIN');
+          return;
+        }
+      }
+
+      // 2. Web browser: Check secure context
+      if (typeof window !== 'undefined' && !window.isSecureContext) {
+        setErrorMsg('Hardware fingerprint scan requires the installed Android App or HTTPS. Please enter your Security PIN to log in here on the web.');
+        setActiveField('PIN');
+        setBiometricScanning(false);
+        return;
+      }
+
+      if (typeof window === 'undefined' || !window.PublicKeyCredential || !navigator.credentials) {
+        setErrorMsg('Hardware biometric sensor is not supported on this browser. Please enter PIN.');
+        setActiveField('PIN');
+        setBiometricScanning(false);
+        return;
+      }
+
       const isAvailable = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
       if (!isAvailable) {
         setErrorMsg('No hardware biometric sensor (fingerprint/iris) detected on this device. Please enter PIN.');
