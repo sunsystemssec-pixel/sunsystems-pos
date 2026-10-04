@@ -1,4 +1,4 @@
-﻿package com.sunsystems.pos;
+package com.sunsystems.pos;
 
 import android.content.Intent;
 import android.net.Uri;

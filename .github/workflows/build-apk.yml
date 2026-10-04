@@ -49,7 +49,13 @@ jobs:
       - name: Build Debug APK with Gradle
         run: |
           cd android
-          ./gradlew assembleDebug --no-daemon
+          if ! ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee ../gradle_build.log; then
+            echo "## ❌ Gradle Build Failed" >> $GITHUB_STEP_SUMMARY
+            echo '```text' >> $GITHUB_STEP_SUMMARY
+            tail -n 120 ../gradle_build.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
 
       - name: Prepare Direct APK Asset
         run: |
