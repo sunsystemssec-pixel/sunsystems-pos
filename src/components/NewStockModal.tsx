@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { User, PaymentMode, StockItem } from '../types';
 import { db } from '../services/db';
 import { sunAI } from '../services/sunAI';
-import { X, Plus, Minus, Check, PackagePlus, Cpu, HardDrive, Monitor, CheckCircle2, Building2, Store } from 'lucide-react';
+import { X, Plus, Minus, Check, PackagePlus, Cpu, HardDrive, Monitor, CheckCircle2, Building2, Store, Trash2 } from 'lucide-react';
 
 interface NewStockModalProps {
   currentUser: User;
@@ -65,6 +65,29 @@ export const NewStockModal: React.FC<NewStockModalProps> = ({
   const [charger, setCharger] = useState(true);
   const [condition, setCondition] = useState('A Grade');
 
+  // Multi-item purchase batch state
+  interface BatchPurchaseItem {
+    id: string;
+    category: string;
+    brand: string;
+    model: string;
+    quantity: number;
+    unitCost: number;
+    totalCost: number;
+    targetSellingPrice?: number;
+    serialNumber?: string;
+    serviceTag?: string;
+    cpu?: string;
+    ram?: string;
+    storage?: string;
+    display?: string;
+    gpu?: string;
+    charger?: boolean;
+    condition: string;
+  }
+  const [purchaseBatchItems, setPurchaseBatchItems] = useState<BatchPurchaseItem[]>([]);
+  const [supplierInvoiceNo, setSupplierInvoiceNo] = useState('');
+
   // Supplier / Party
   const [supplier, setSupplier] = useState(() => (allParties.length > 0 ? allParties[0] : 'ABC Computers'));
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('Bank Transfer');
@@ -77,12 +100,40 @@ export const NewStockModal: React.FC<NewStockModalProps> = ({
   const handleUnitCostChange = (val: number | '') => {
     setUnitCost(val);
     if (val !== '' && Number(val) > 0) {
-      // Auto-suggest target selling price (20-30% markup)
       setTargetSellingPrice(Math.round(Number(val) * 1.25));
     }
   };
 
-  const isLaptopOrDesktop = category === 'Laptops' || category === 'Desktops';
+  const isLaptop = category === 'Laptops';
+  const isDesktop = category === 'Desktops';
+  const isLaptopOrDesktop = isLaptop || isDesktop;
+
+  // Handle category switching with correct defaults
+  const handleCategoryChange = (newCat: string) => {
+    setCategory(newCat);
+    if (newCat === 'Laptops') {
+      setDisplay('14.0" FHD');
+      setCharger(true);
+      if (!cpu) setCpu('i5 11th Gen');
+      if (!ram) setRam('16GB DDR4');
+      if (!storage) setStorage('512GB NVMe');
+    } else if (newCat === 'Desktops') {
+      // Desktops: No screen size, no adapter/charger by default
+      setDisplay('');
+      setCharger(false);
+      if (!cpu) setCpu('i5 10th Gen');
+      if (!ram) setRam('16GB DDR4');
+      if (!storage) setStorage('512GB NVMe');
+    } else {
+      // Accessories, RAM, Storage, etc: No screen size, no charger, no CPU/RAM
+      setDisplay('');
+      setCharger(false);
+      setCpu('');
+      setRam('');
+      setStorage('');
+      setGpu('');
+    }
+  };
 
   // Items matching selected category to quickly pick from
   const existingCategoryItems = useMemo(() => {
@@ -124,7 +175,7 @@ export const NewStockModal: React.FC<NewStockModalProps> = ({
   }, [allParties, supplier]);
 
   const handleSelectExistingItem = (item: StockItem) => {
-    if (item.category) setCategory(item.category);
+    if (item.category) handleCategoryChange(item.category);
     setBrand(item.brand);
     setModel(item.model);
     if (item.cpu) setCpu(item.cpu);
@@ -138,10 +189,134 @@ export const NewStockModal: React.FC<NewStockModalProps> = ({
     if (item.targetSellingPrice) setTargetSellingPrice(item.targetSellingPrice);
   };
 
+  const handleAddToBatch = () => {
+    setErrorMessage(null);
+    const fullProductName = model.trim() || `${brand} ${category}`;
+    if (!fullProductName.trim()) {
+      setErrorMessage('Please specify the product model or description before adding to invoice.');
+      return;
+    }
+    if (numUnitCost <= 0) {
+      setErrorMessage('Please enter the purchase unit cost.');
+      return;
+    }
+
+    const newItem: BatchPurchaseItem = {
+      id: `batch-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      category,
+      brand: brand.trim(),
+      model: fullProductName.trim(),
+      quantity,
+      unitCost: numUnitCost,
+      totalCost,
+      targetSellingPrice: Number(targetSellingPrice) || Math.round(numUnitCost * 1.25),
+      serialNumber: serialNumber.trim(),
+      serviceTag: serviceTag.trim(),
+      cpu: isLaptopOrDesktop ? cpu.trim() : '',
+      ram: isLaptopOrDesktop ? ram.trim() : '',
+      storage: isLaptopOrDesktop ? storage.trim() : '',
+      display: isLaptop ? display.trim() : '',
+      gpu: isLaptopOrDesktop ? gpu.trim() : '',
+      charger: isLaptop ? charger : false,
+      condition
+    };
+
+    setPurchaseBatchItems(prev => [...prev, newItem]);
+
+    // Reset current item inputs for next item in batch
+    setModel('');
+    setQuantity(1);
+    setUnitCost('');
+    setTargetSellingPrice('');
+    setSerialNumber('');
+    setServiceTag('');
+    sunAI.speak(`Added ${newItem.brand} ${newItem.model} to purchase invoice.`);
+  };
+
+  const handleRemoveFromBatch = (id: string) => {
+    setPurchaseBatchItems(prev => prev.filter(i => i.id !== id));
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
+    const cleanSupplier = supplier.trim() || 'Vendor';
+
+    // If in purchase mode with batch items, submit the entire batch
+    if (entryType === 'PURCHASE' && purchaseBatchItems.length > 0) {
+      // If current item form also has valid inputs, include it in the batch
+      let finalItems = [...purchaseBatchItems];
+      const fullProductName = model.trim();
+      if (fullProductName && numUnitCost > 0) {
+        finalItems.push({
+          id: `batch-${Date.now()}`,
+          category,
+          brand: brand.trim(),
+          model: fullProductName,
+          quantity,
+          unitCost: numUnitCost,
+          totalCost,
+          targetSellingPrice: Number(targetSellingPrice) || Math.round(numUnitCost * 1.25),
+          serialNumber: serialNumber.trim(),
+          serviceTag: serviceTag.trim(),
+          cpu: isLaptopOrDesktop ? cpu.trim() : '',
+          ram: isLaptopOrDesktop ? ram.trim() : '',
+          storage: isLaptopOrDesktop ? storage.trim() : '',
+          display: isLaptop ? display.trim() : '',
+          gpu: isLaptopOrDesktop ? gpu.trim() : '',
+          charger: isLaptop ? charger : false,
+          condition
+        });
+      }
+
+      const totalBatchUnits = finalItems.reduce((s, i) => s + i.quantity, 0);
+      const totalBatchCost = finalItems.reduce((s, i) => s + i.totalCost, 0);
+
+      try {
+        db.addPurchase({
+          supplierName: cleanSupplier,
+          supplierInvoiceNo: supplierInvoiceNo.trim() || undefined,
+          productName: `${finalItems.length} Items Batch (${cleanSupplier})`,
+          brand: finalItems[0]?.brand || 'Multiple',
+          model: `${finalItems.length} Products`,
+          category: 'Multiple',
+          quantity: totalBatchUnits,
+          unitCost: totalBatchUnits > 0 ? Math.round(totalBatchCost / totalBatchUnits) : 0,
+          totalAmount: totalBatchCost,
+          paymentMode,
+          invoiceNumber: supplierInvoiceNo.trim() || `INV-${Date.now().toString().slice(-4)}`,
+          notes: notes.trim(),
+          items: finalItems.map(b => ({
+            brand: b.brand,
+            model: b.model,
+            category: b.category,
+            quantity: b.quantity,
+            unitCost: b.unitCost,
+            totalAmount: b.totalCost,
+            serialNumber: b.serialNumber,
+            serviceTag: b.serviceTag,
+            cpu: b.cpu,
+            ram: b.ram,
+            storage: b.storage,
+            display: b.display,
+            gpu: b.gpu,
+            charger: b.charger,
+            condition: b.condition,
+            targetSellingPrice: b.targetSellingPrice
+          }))
+        }, currentUser);
+
+        sunAI.speak(`Recorded purchase invoice of ${finalItems.length} items totaling ₹${totalBatchCost} from ${cleanSupplier}. All items added to stock.`);
+        onSuccess();
+        return;
+      } catch (err: any) {
+        setErrorMessage(err.message || 'Failed to save batch purchase.');
+        return;
+      }
+    }
+
+    // Single item handling
     const fullProductName = model.trim() || `${brand} ${category}`;
 
     if (!fullProductName.trim()) {
@@ -154,12 +329,11 @@ export const NewStockModal: React.FC<NewStockModalProps> = ({
       return;
     }
 
-    const cleanSupplier = supplier.trim() || 'Vendor';
-
     try {
       if (entryType === 'PURCHASE') {
         db.addPurchase({
           supplierName: cleanSupplier,
+          supplierInvoiceNo: supplierInvoiceNo.trim() || undefined,
           productName: `${brand} ${fullProductName}`.trim(),
           brand: brand.trim(),
           model: fullProductName.trim(),
@@ -173,11 +347,11 @@ export const NewStockModal: React.FC<NewStockModalProps> = ({
           cpu: isLaptopOrDesktop ? cpu.trim() : '',
           ram: isLaptopOrDesktop ? ram.trim() : '',
           storage: isLaptopOrDesktop ? storage.trim() : '',
-          display: isLaptopOrDesktop ? display.trim() : '',
+          display: isLaptop ? display.trim() : '',
           gpu: isLaptopOrDesktop ? gpu.trim() : '',
-          charger: isLaptopOrDesktop ? charger : false,
+          charger: isLaptop ? charger : false,
           condition,
-          invoiceNumber: `INV-${Date.now().toString().slice(-4)}`,
+          invoiceNumber: supplierInvoiceNo.trim() || `INV-${Date.now().toString().slice(-4)}`,
           notes: notes.trim()
         }, currentUser);
 
@@ -185,7 +359,7 @@ export const NewStockModal: React.FC<NewStockModalProps> = ({
           const newTot = (matchedStockItem.availableQuantity || 0) + quantity;
           sunAI.speak(`Added ${quantity} units to existing stock for ${fullProductName}. New stock is ${newTot} units.`);
         } else {
-          sunAI.speak(`Bulk purchase of ${quantity} ${fullProductName} recorded from ${cleanSupplier}.`);
+          sunAI.speak(`Purchase of ${quantity} ${fullProductName} recorded from ${cleanSupplier}.`);
         }
       } else {
         const added = db.addStock({
@@ -199,9 +373,9 @@ export const NewStockModal: React.FC<NewStockModalProps> = ({
           cpu: isLaptopOrDesktop ? cpu.trim() : '',
           ram: isLaptopOrDesktop ? ram.trim() : '',
           storage: isLaptopOrDesktop ? storage.trim() : '',
-          display: isLaptopOrDesktop ? display.trim() : '',
+          display: isLaptop ? display.trim() : '',
           gpu: isLaptopOrDesktop ? gpu.trim() : '',
-          charger: isLaptopOrDesktop ? charger : false,
+          charger: isLaptop ? charger : false,
           condition,
           purchaseCost: numUnitCost,
           repairCost: 0,
@@ -291,7 +465,7 @@ export const NewStockModal: React.FC<NewStockModalProps> = ({
             </label>
             <select
               value={category}
-              onChange={(e) => setCategory(e.target.value)}
+              onChange={(e) => handleCategoryChange(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-sky-500"
             >
               {CATEGORIES.map((c) => (
@@ -497,44 +671,63 @@ export const NewStockModal: React.FC<NewStockModalProps> = ({
               </div>
 
               {/* Display & GPU */}
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-                    Screen Display
-                  </label>
-                  <input
-                    type="text"
-                    value={display}
-                    onChange={(e) => setDisplay(e.target.value)}
-                    placeholder='14.0" FHD'
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-sky-500"
-                  />
+              {isLaptop ? (
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                      Screen Display
+                    </label>
+                    <input
+                      type="text"
+                      value={display}
+                      onChange={(e) => setDisplay(e.target.value)}
+                      placeholder='14.0" FHD'
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-sky-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                      Graphics / GPU
+                    </label>
+                    <input
+                      type="text"
+                      value={gpu}
+                      onChange={(e) => setGpu(e.target.value)}
+                      placeholder="Intel Iris / Dedicated"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-sky-500"
+                    />
+                  </div>
                 </div>
+              ) : (
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-                    Graphics / GPU
+                    Graphics / GPU (Optional)
                   </label>
                   <input
                     type="text"
                     value={gpu}
                     onChange={(e) => setGpu(e.target.value)}
-                    placeholder="Intel Iris / Dedicated"
+                    placeholder="e.g. Integrated / Nvidia GTX 1650"
                     className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-sky-500"
                   />
                 </div>
-              </div>
+              )}
 
               {/* Charger & Service Tag */}
               <div className="flex items-center justify-between pt-1 border-t border-slate-800/80">
-                <label className="flex items-center space-x-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={charger}
-                    onChange={(e) => setCharger(e.target.checked)}
-                    className="rounded bg-slate-900 border-slate-700 text-sky-500 focus:ring-sky-500 w-4 h-4"
-                  />
-                  <span className="text-xs text-slate-300 font-medium">Original Charger Included</span>
-                </label>
+                {isLaptop ? (
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={charger}
+                      onChange={(e) => setCharger(e.target.checked)}
+                      className="rounded bg-slate-900 border-slate-700 text-sky-500 focus:ring-sky-500 w-4 h-4"
+                    />
+                    <span className="text-xs text-slate-300 font-medium">Original Charger Included</span>
+                  </label>
+                ) : (
+                  <span className="text-xs text-slate-400 font-medium">Desktop System Unit (No Adapter Required)</span>
+                )}
                 <div className="w-36">
                   <input
                     type="text"
@@ -729,6 +922,22 @@ export const NewStockModal: React.FC<NewStockModalProps> = ({
             </div>
           </div>
 
+          {/* Supplier Invoice / Bill Number for Purchases */}
+          {entryType === 'PURCHASE' && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Supplier Bill / Invoice No (Optional)
+              </label>
+              <input
+                type="text"
+                value={supplierInvoiceNo}
+                onChange={(e) => setSupplierInvoiceNo(e.target.value)}
+                placeholder="e.g. TAX-8921 or Dealer Bill No"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-100 placeholder-slate-600 focus:outline-none focus:border-amber-500 uppercase"
+              />
+            </div>
+          )}
+
           {/* Payment Mode for Purchases */}
           {entryType === 'PURCHASE' && (
             <div>
@@ -756,6 +965,53 @@ export const NewStockModal: React.FC<NewStockModalProps> = ({
             </div>
           )}
 
+          {/* Multi-Item Purchase Batch Cart & Controls */}
+          {entryType === 'PURCHASE' && (
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={handleAddToBatch}
+                className="w-full bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 font-bold py-2.5 rounded-xl text-xs flex items-center justify-center space-x-1.5 transition-all shadow-sm active:scale-[0.99]"
+              >
+                <Plus className="w-4 h-4 text-amber-400" />
+                <span>+ ADD THIS ITEM TO INVOICE BATCH</span>
+              </button>
+
+              {purchaseBatchItems.length > 0 && (
+                <div className="bg-slate-950 border border-amber-500/30 rounded-2xl p-3 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-amber-400 border-b border-slate-800 pb-1.5">
+                    <span>Items in Invoice ({purchaseBatchItems.length})</span>
+                    <span>Total: ₹{purchaseBatchItems.reduce((s, i) => s + i.totalCost, 0).toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                    {purchaseBatchItems.map((itm, idx) => (
+                      <div key={itm.id} className="flex items-center justify-between bg-slate-900/90 p-2 rounded-xl border border-slate-800 text-xs">
+                        <div className="flex-1 pr-2">
+                          <div className="font-bold text-slate-200">
+                            {idx + 1}. {itm.brand} {itm.model}
+                          </div>
+                          <div className="text-[10px] text-slate-400 flex items-center space-x-2 mt-0.5">
+                            <span>Qty: <strong className="text-white">{itm.quantity}</strong></span>
+                            <span>• Cost: ₹{itm.unitCost.toLocaleString('en-IN')}</span>
+                            <span className="text-amber-400 font-semibold">• Total: ₹{itm.totalCost.toLocaleString('en-IN')}</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFromBatch(itm.id)}
+                          className="text-rose-400 hover:text-rose-300 p-1.5 rounded-lg hover:bg-rose-950/50"
+                          title="Remove item"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Submit Action */}
           <div className="pt-2">
             <button
@@ -767,7 +1023,12 @@ export const NewStockModal: React.FC<NewStockModalProps> = ({
                 {matchedStockItem
                   ? `RESTOCK • ADD +${quantity} UNITS TO EXISTING STOCK`
                   : entryType === 'PURCHASE'
-                  ? `RECORD PURCHASE • ${quantity} UNITS`
+                  ? purchaseBatchItems.length > 0
+                    ? `SAVE PURCHASE INVOICE (${purchaseBatchItems.length + (model.trim() && numUnitCost > 0 ? 1 : 0)} ITEMS • ₹${(
+                        purchaseBatchItems.reduce((s, i) => s + i.totalCost, 0) +
+                        (model.trim() && numUnitCost > 0 ? totalCost : 0)
+                      ).toLocaleString('en-IN')})`
+                    : `RECORD PURCHASE • ${quantity} UNITS (₹${totalCost.toLocaleString('en-IN')})`
                   : `ADD ${quantity} UNITS TO INVENTORY`}
               </span>
             </button>

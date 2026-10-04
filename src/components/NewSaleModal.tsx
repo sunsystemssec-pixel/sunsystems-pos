@@ -39,6 +39,16 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
   const [notes, setNotes] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Owner on-the-fly custom item creation
+  const [showCustomItemModal, setShowCustomItemModal] = useState(false);
+  const [customCategory, setCustomCategory] = useState('Laptops');
+  const [customBrand, setCustomBrand] = useState('Dell');
+  const [customModel, setCustomModel] = useState('');
+  const [customSpecs, setCustomSpecs] = useState('');
+  const [customSerial, setCustomSerial] = useState('');
+  const [customQty, setCustomQty] = useState(1);
+  const [customPrice, setCustomPrice] = useState<number | ''>('');
+
   // Filter available stock based on typed or dictated search query
   const filteredStock = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -104,11 +114,15 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
       }
     } else {
       const defaultPrice = Number(item.targetSellingPrice || Math.round(Number(item.purchaseCost || 0) * 1.25) || 0);
+      const specs = [item.cpu, item.ram, item.storage, item.display].filter(Boolean).join(' • ');
       const newItem: SaleItem = {
         stockId: item.id,
         productName: `${item.brand} ${item.model}`.trim(),
         brand: item.brand,
         model: item.model,
+        category: item.category,
+        description: specs,
+        specsSummary: specs,
         serialNumber: item.serialNumber || '',
         quantity: 1,
         unitPrice: defaultPrice,
@@ -122,10 +136,48 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
     setSearchQuery('');
   };
 
+  const handleAddCustomItem = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!customModel.trim()) {
+      setErrorMessage('Please enter the model or item description for custom billing.');
+      return;
+    }
+    const price = Number(customPrice) || 0;
+    if (price <= 0) {
+      setErrorMessage('Please enter a valid selling price for this custom item.');
+      return;
+    }
+
+    const newItem: SaleItem = {
+      productName: `${customBrand} ${customModel}`.trim(),
+      brand: customBrand.trim(),
+      model: customModel.trim(),
+      category: customCategory,
+      description: customSpecs.trim(),
+      specsSummary: customSpecs.trim(),
+      serialNumber: customSerial.trim(),
+      quantity: Number(customQty) || 1,
+      unitPrice: price,
+      amount: (Number(customQty) || 1) * price,
+      isCustomItem: true
+    };
+
+    setBillItems(prev => [...prev, newItem]);
+    setShowCustomItemModal(false);
+    setCustomModel('');
+    setCustomSpecs('');
+    setCustomSerial('');
+    setCustomQty(1);
+    setCustomPrice('');
+    setErrorMessage(null);
+    setIsAddingMore(false);
+    sunAI.speak(`Added custom item ${newItem.productName} to sale voucher.`);
+  };
+
   const handleUpdateItemQty = (index: number, newQty: number) => {
     const item = billItems[index];
     const stockRef = availableStock.find(s => s.id === item.stockId);
-    const maxAvail = stockRef ? Number(stockRef.availableQuantity ?? stockRef.quantity ?? 1) : 999;
+    const maxAvail = item.isCustomItem ? 999 : (stockRef ? Number(stockRef.availableQuantity ?? stockRef.quantity ?? 1) : 999);
     const clampedQty = Math.max(1, Math.min(maxAvail, newQty));
 
     const updated = [...billItems];
@@ -300,22 +352,69 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
               </div>
             )}
 
+            {/* Owner Privilege: On-the-fly Custom Item Creation */}
+            {currentUser.role === 'OWNER' && (
+              <div className="flex items-center justify-between bg-amber-950/40 border border-amber-500/40 rounded-xl p-2 px-3">
+                <div className="text-[11px] text-amber-200">
+                  Item not in stock list?
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (searchQuery.trim()) {
+                      setCustomModel(searchQuery.trim());
+                    }
+                    setShowCustomItemModal(true);
+                  }}
+                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black px-2.5 py-1 rounded-lg flex items-center space-x-1 shadow transition-all active:scale-95"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ BILL CUSTOM ITEM (OWNER)</span>
+                </button>
+              </div>
+            )}
+
             {/* Stock List */}
             <div className="space-y-2 max-h-[42vh] overflow-y-auto pr-0.5">
               {availableStock.length === 0 ? (
-                <div className="text-center py-6 bg-slate-900/60 rounded-xl border border-slate-800 p-3">
+                <div className="text-center py-6 bg-slate-900/60 rounded-xl border border-slate-800 p-3 space-y-2">
                   <p className="text-xs text-slate-400 font-semibold">No items currently in stock.</p>
+                  {currentUser.role === 'OWNER' && (
+                    <button
+                      type="button"
+                      onClick={() => setShowCustomItemModal(true)}
+                      className="text-xs bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded-lg flex items-center space-x-1 mx-auto"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Create & Bill Custom Item</span>
+                    </button>
+                  )}
                 </div>
               ) : filteredStock.length === 0 ? (
-                <div className="text-center py-6 bg-slate-900/60 rounded-xl border border-slate-800 p-3">
+                <div className="text-center py-6 bg-slate-900/60 rounded-xl border border-slate-800 p-3 space-y-2">
                   <p className="text-xs text-slate-400">No in-stock item matches "{searchQuery}".</p>
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="mt-2 text-xs bg-slate-800 hover:bg-slate-700 text-amber-400 px-3 py-1 rounded-lg"
-                  >
-                    Clear Search
-                  </button>
+                  <div className="flex items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="text-xs bg-slate-800 hover:bg-slate-700 text-amber-400 px-3 py-1.5 rounded-lg"
+                    >
+                      Clear Search
+                    </button>
+                    {currentUser.role === 'OWNER' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomModel(searchQuery.trim());
+                          setShowCustomItemModal(true);
+                        }}
+                        className="text-xs bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded-lg flex items-center space-x-1"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Bill "{searchQuery}" as Custom Item</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               ) : (
                 filteredStock.map((item) => {
@@ -427,9 +526,21 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
                               {item.productName}
                             </h4>
                           </div>
+                          {(item.specsSummary || item.description) && (
+                            <div className="text-[10px] text-slate-400 mt-0.5 ml-7">
+                              {item.specsSummary || item.description}
+                            </div>
+                          )}
                           {item.serialNumber && (
                             <div className="text-[10px] text-amber-400 font-mono mt-0.5 ml-7 font-bold">
                               S/N: {item.serialNumber}
+                            </div>
+                          )}
+                          {item.isCustomItem && (
+                            <div className="ml-7 mt-1">
+                              <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.5 rounded font-bold uppercase">
+                                Custom Non-Stock Item (Owner Billed)
+                              </span>
                             </div>
                           )}
                         </div>
@@ -466,10 +577,10 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
                           />
                           <button
                             type="button"
-                            disabled={item.quantity >= maxAvail}
+                            disabled={!item.isCustomItem && item.quantity >= maxAvail}
                             onClick={() => handleUpdateItemQty(idx, item.quantity + 1)}
                             className={`w-6 h-6 rounded-lg flex items-center justify-center font-bold text-xs ${
-                              item.quantity >= maxAvail
+                              !item.isCustomItem && item.quantity >= maxAvail
                                 ? 'bg-slate-800/40 text-slate-600 cursor-not-allowed'
                                 : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
                             }`}
@@ -477,7 +588,7 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
                             <Plus className="w-3 h-3" />
                           </button>
                           <span className="text-[10px] text-slate-500 font-mono">
-                            / {maxAvail} in stock
+                            {item.isCustomItem ? '/ Non-Stock' : `/ ${maxAvail} in stock`}
                           </span>
                         </div>
 
@@ -620,6 +731,145 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
               </button>
             </div>
           </form>
+        )}
+
+        {/* OWNER CUSTOM NON-STOCK ITEM MODAL */}
+        {showCustomItemModal && (
+          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3">
+            <div className="bg-slate-900 border border-amber-500/50 w-full max-w-md rounded-2xl p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                <div>
+                  <h4 className="font-bold text-sm text-amber-400 uppercase tracking-wide">
+                    Bill Custom / Non-Stock Item
+                  </h4>
+                  <p className="text-[11px] text-slate-400">
+                    Owner override: Bill item now, reconcile purchase later
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowCustomItemModal(false)}
+                  className="text-slate-400 hover:text-slate-200 p-1 rounded-full bg-slate-800"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {/* Category & Brand */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      Category
+                    </label>
+                    <select
+                      value={customCategory}
+                      onChange={(e) => setCustomCategory(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-slate-100 focus:outline-none focus:border-amber-500"
+                    >
+                      {['Laptops', 'Desktops', 'RAM / Memory', 'SSD / Storage', 'Peripherals (Keyboards/Mice)', 'Chargers & Adapters', 'Cables & Accessories', 'Other'].map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      Brand
+                    </label>
+                    <input
+                      type="text"
+                      value={customBrand}
+                      onChange={(e) => setCustomBrand(e.target.value)}
+                      placeholder="e.g. Dell, HP, Lenovo"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-slate-100 focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Model / Item Name */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Model / Item Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={customModel}
+                    onChange={(e) => setCustomModel(e.target.value)}
+                    placeholder="e.g. Latitude 5420 / ThinkPad T490"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                {/* Specs / Description */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Specs / Description (Printed on Bill)
+                  </label>
+                  <input
+                    type="text"
+                    value={customSpecs}
+                    onChange={(e) => setCustomSpecs(e.target.value)}
+                    placeholder="e.g. i5 11th Gen • 16GB RAM • 512GB SSD • 14.0 FHD"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                {/* Price & Quantity */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      Selling Price (₹) *
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      value={customPrice}
+                      onChange={(e) => setCustomPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                      placeholder="₹ Rate"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-bold text-emerald-400 focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      Quantity
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={customQty}
+                      onChange={(e) => setCustomQty(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-bold text-slate-100 focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Serial Number (Optional) */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Serial Number (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={customSerial}
+                    onChange={(e) => setCustomSerial(e.target.value)}
+                    placeholder="e.g. 8CG0290XYZ"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-100 uppercase focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleAddCustomItem()}
+                  className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl text-xs flex items-center justify-center space-x-1.5 shadow-lg shadow-amber-500/20 active:scale-[0.99] transition-all mt-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>ADD CUSTOM ITEM TO SALE BILL</span>
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

@@ -176,16 +176,21 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             </div>
 
             {/* Expenses Today */}
-            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5">
+            <div
+              onClick={() => onQuickAction('EXPENSE')}
+              className="bg-slate-900/90 hover:bg-slate-800/90 border border-slate-800 hover:border-rose-500/50 rounded-2xl p-3.5 cursor-pointer transition-all shadow-sm group"
+            >
               <div className="flex items-center justify-between text-rose-400 mb-1">
-                <span className="text-[11px] font-bold uppercase tracking-wider">Expenses</span>
-                <Receipt className="w-4 h-4" />
+                <span className="text-[11px] font-bold uppercase tracking-wider">Expenses Today</span>
+                <span className="text-[10px] bg-rose-500/20 text-rose-300 font-bold px-1.5 py-0.5 rounded border border-rose-500/30 group-hover:bg-rose-500 group-hover:text-white transition-colors">
+                  + EXPENSE
+                </span>
               </div>
               <div className="text-lg font-black text-slate-100">
                 ₹{todayExpensesTotal.toLocaleString('en-IN')}
               </div>
               <div className="text-[11px] text-slate-400 mt-1">
-                Courier, Packaging, Tea
+                Courier, Packaging, Tea • Tap to Add
               </div>
             </div>
 
@@ -221,16 +226,21 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           /* STAFF DESK VIEW: ONLY EXPENSES AND STOCK COUNTS (NO COMPANY SALES/PURCHASE AMOUNTS) */
           <div className="grid grid-cols-2 gap-2.5">
             {/* Expenses Today Card (Staff Access Allowed) */}
-            <div className="bg-slate-900/90 border border-rose-900/40 rounded-2xl p-3.5">
+            <div
+              onClick={() => onQuickAction('EXPENSE')}
+              className="bg-slate-900/90 hover:bg-slate-800/90 border border-rose-900/40 hover:border-rose-500/50 rounded-2xl p-3.5 cursor-pointer transition-all shadow-sm group"
+            >
               <div className="flex items-center justify-between text-rose-400 mb-1">
                 <span className="text-[11px] font-bold uppercase tracking-wider">Shop Expenses</span>
-                <Receipt className="w-4 h-4" />
+                <span className="text-[10px] bg-rose-500/20 text-rose-300 font-bold px-1.5 py-0.5 rounded border border-rose-500/30 group-hover:bg-rose-500 group-hover:text-white transition-colors">
+                  + EXPENSE
+                </span>
               </div>
               <div className="text-xl font-black text-slate-100">
                 ₹{todayExpensesTotal.toLocaleString('en-IN')}
               </div>
               <div className="text-[11px] text-slate-400 mt-1">
-                Tea, Travel, Packaging
+                Tea, Travel, Packaging • Tap to Add
               </div>
             </div>
 

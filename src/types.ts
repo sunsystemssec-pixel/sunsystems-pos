@@ -26,6 +26,7 @@ export interface StockItem {
   id: string; // SS-STOCK-YYYYMMDD-XXXX
   brand: string;
   model: string;
+  description?: string;
   serialNumber?: string; // Optional for bulk/accessories
   quantity?: number; // Total quantity in batch
   availableQuantity?: number; // Remaining unsold units
@@ -81,10 +82,14 @@ export interface SaleItem {
   productName: string;
   brand?: string;
   model?: string;
+  category?: string;
+  description?: string;
+  specsSummary?: string;
   serialNumber?: string;
   quantity: number;
   unitPrice: number;
   amount: number;
+  isCustomItem?: boolean;
 }
 
 export interface Sale {
@@ -113,11 +118,33 @@ export interface Sale {
   receiptDriveId?: string;
 }
 
+export interface PurchaseItem {
+  category?: string;
+  brand?: string;
+  model: string;
+  description?: string;
+  specsSummary?: string;
+  quantity: number;
+  unitCost: number;
+  totalAmount: number;
+  targetSellingPrice?: number;
+  serialNumbers?: string;
+  serviceTag?: string;
+  cpu?: string;
+  ram?: string;
+  storage?: string;
+  display?: string;
+  gpu?: string;
+  condition?: string;
+  charger?: boolean;
+}
+
 export interface Purchase {
   id: string; // SS-PUR-YYYYMMDD-XXXX
   date: string;
   time: string;
   supplierName: string;
+  supplierInvoiceNo?: string;
   productName: string;
   quantity: number; // Bulk quantity purchased
   unitCost: number; // Cost per unit
@@ -127,6 +154,7 @@ export interface Purchase {
   category?: string;
   brand?: string;
   model?: string;
+  description?: string;
   cpu?: string;
   ram?: string;
   storage?: string;
@@ -136,6 +164,7 @@ export interface Purchase {
   charger?: boolean;
   serviceTag?: string;
   invoiceNumber?: string;
+  items?: PurchaseItem[]; // Multi-item purchase batch
   documentDriveId?: string;
   enteredBy: string;
   notes?: string;

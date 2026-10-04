@@ -675,6 +675,34 @@ class DatabaseService {
           }
           item.stockId = stItem.id;
           stockModified = true;
+        } else if (item.isCustomItem || currentUser.role === 'OWNER') {
+          // Owner created custom / non-stock item on the fly during sale
+          const newCustomStock: StockItem = {
+            id: this.generateId('STOCK'),
+            brand: item.brand || 'Other',
+            model: item.model || item.productName,
+            description: item.specsSummary || item.description || '',
+            category: (item as any).category || 'Other',
+            condition: 'New/Custom',
+            charger: false,
+            purchaseCost: 0,
+            repairCost: 0,
+            transportCost: 0,
+            otherCost: 0,
+            totalCost: 0,
+            targetSellingPrice: item.unitPrice,
+            supplier: 'Pending Purchase Intake',
+            purchaseDate: date,
+            status: 'SOLD',
+            availableQuantity: 0,
+            quantity: itemQty,
+            enteredBy: currentUser.name,
+            timestamp: `${date} ${time}`,
+            notes: `Billed during sale ${newSale.invoiceNumber}. Pending supplier purchase entry.`
+          };
+          stock.unshift(newCustomStock);
+          item.stockId = newCustomStock.id;
+          stockModified = true;
         }
       }
     } else {
@@ -930,36 +958,72 @@ class DatabaseService {
       this.ensureSupplier(purchaseData.supplierName.trim());
     }
 
-    // Automatically stock this bulk purchase into inventory
+    // Automatically stock purchase item(s) into inventory
     try {
-      const targetSellingPrice = Math.round(unitCost > 0 ? unitCost * 1.25 : 0);
-      this.addStock({
-        brand: purchaseData.brand || (purchaseData.productName.split(' ')[0]) || 'Hardware',
-        model: purchaseData.model || purchaseData.productName,
-        serialNumber: purchaseData.serialNumbers || '',
-        category: purchaseData.category || 'Hardware',
-        cpu: purchaseData.cpu || '',
-        ram: purchaseData.ram || '',
-        storage: purchaseData.storage || '',
-        display: purchaseData.display || '',
-        gpu: purchaseData.gpu || '',
-        condition: purchaseData.condition || 'New',
-        charger: purchaseData.charger ?? (purchaseData.category === 'Laptops'),
-        serviceTag: purchaseData.serviceTag || '',
-        quantity: qty,
-        availableQuantity: qty,
-        purchaseCost: unitCost,
-        repairCost: 0,
-        transportCost: 0,
-        otherCost: 0,
-        targetSellingPrice,
-        supplier: purchaseData.supplierName,
-        status: 'READY',
-        enteredBy: currentUser.name,
-        notes: purchaseData.notes || `Bulk purchase ${newPurchase.id}`
-      }, currentUser);
+      if (purchaseData.items && purchaseData.items.length > 0) {
+        // Multi-item purchase batch
+        for (const itm of purchaseData.items) {
+          const itmQty = Math.max(1, Number(itm.quantity || 1));
+          const itmCost = Number(itm.unitCost || 0);
+          const itmTargetPrice = Number(itm.targetSellingPrice || (itmCost > 0 ? Math.round(itmCost * 1.25) : 0));
+          this.addStock({
+            brand: itm.brand || (itm.model.split(' ')[0]) || 'Hardware',
+            model: itm.model,
+            description: itm.specsSummary || itm.description || '',
+            serialNumber: itm.serialNumbers || '',
+            category: itm.category || 'Hardware',
+            cpu: itm.cpu || '',
+            ram: itm.ram || '',
+            storage: itm.storage || '',
+            display: itm.display || '',
+            gpu: itm.gpu || '',
+            condition: itm.condition || 'New',
+            charger: itm.charger ?? (itm.category === 'Laptops'),
+            serviceTag: itm.serviceTag || '',
+            quantity: itmQty,
+            availableQuantity: itmQty,
+            purchaseCost: itmCost,
+            repairCost: 0,
+            transportCost: 0,
+            otherCost: 0,
+            targetSellingPrice: itmTargetPrice,
+            supplier: purchaseData.supplierName,
+            status: 'READY',
+            enteredBy: currentUser.name,
+            notes: `Batch purchase ${newPurchase.id} (${purchaseData.supplierInvoiceNo || ''})`
+          }, currentUser);
+        }
+      } else {
+        // Single item purchase
+        const targetSellingPrice = Math.round(unitCost > 0 ? unitCost * 1.25 : 0);
+        this.addStock({
+          brand: purchaseData.brand || (purchaseData.productName.split(' ')[0]) || 'Hardware',
+          model: purchaseData.model || purchaseData.productName,
+          description: purchaseData.description || '',
+          serialNumber: purchaseData.serialNumbers || '',
+          category: purchaseData.category || 'Hardware',
+          cpu: purchaseData.cpu || '',
+          ram: purchaseData.ram || '',
+          storage: purchaseData.storage || '',
+          display: purchaseData.display || '',
+          gpu: purchaseData.gpu || '',
+          condition: purchaseData.condition || 'New',
+          charger: purchaseData.charger ?? (purchaseData.category === 'Laptops'),
+          serviceTag: purchaseData.serviceTag || '',
+          quantity: qty,
+          availableQuantity: qty,
+          purchaseCost: unitCost,
+          repairCost: 0,
+          transportCost: 0,
+          otherCost: 0,
+          targetSellingPrice,
+          supplier: purchaseData.supplierName,
+          status: 'READY',
+          enteredBy: currentUser.name,
+          notes: purchaseData.notes || `Bulk purchase ${newPurchase.id}`
+        }, currentUser);
+      }
     } catch (e) {
-      // If stock already exists or non-fatal error, keep purchase
       console.warn('Auto stock addition note:', e);
     }
 

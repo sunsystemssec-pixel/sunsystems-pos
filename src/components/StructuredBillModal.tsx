@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { Sale, StockItem } from '../types';
 import { COMPANY_INFO } from '../data/seedData';
 import { formatToDDMMYY, generateWhatsAppSaleMessage, openWhatsAppInvoice, getCleanWhatsAppNumber, numberToWordsIndian } from '../services/whatsapp';
-import { X, Printer, MessageCircle, Copy, Check, Plus, Smartphone, FileText } from 'lucide-react';
+import { X, Printer, MessageCircle, Copy, Check, Plus, Smartphone, FileText, Download, Loader2 } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 interface StructuredBillModalProps {
   sale: Sale;
@@ -19,6 +21,7 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
 }) => {
   const [targetPhone, setTargetPhone] = useState(sale.customerMobile || '');
   const [copied, setCopied] = useState(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   const cleanPhone = getCleanWhatsAppNumber(targetPhone);
   const qty = Number(sale.quantity || 1);
@@ -55,8 +58,99 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
     window.print();
   };
 
-  const handleSendWhatsApp = () => {
-    openWhatsAppInvoice(sale, stockItem, targetPhone);
+  const generateBillPdfBlob = async (): Promise<{ blob: Blob; fileName: string } | null> => {
+    const billEl = document.getElementById('printable-bill');
+    if (!billEl) return null;
+
+    const canvas = await html2canvas(billEl, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      logging: false
+    });
+
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const imgHeight = (canvas.height * pageWidth) / canvas.width;
+
+    if (imgHeight > pageHeight) {
+      const scaleRatio = pageHeight / imgHeight;
+      pdf.addImage(imgData, 'PNG', 0, 0, pageWidth * scaleRatio, pageHeight);
+    } else {
+      pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, imgHeight);
+    }
+
+    const fileName = `SunSystems_Invoice_${invoiceNumber}.pdf`;
+    const blob = pdf.output('blob');
+    return { blob, fileName };
+  };
+
+  const handleSendWhatsAppPdf = async () => {
+    setIsGeneratingPdf(true);
+    try {
+      const res = await generateBillPdfBlob();
+      if (!res) {
+        openWhatsAppInvoice(sale, stockItem, targetPhone);
+        return;
+      }
+
+      const { blob, fileName } = res;
+      const file = new File([blob], fileName, { type: 'application/pdf' });
+
+      // If Native Web Share API supports file sharing (Mobile Android / Chrome)
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: `Tax Invoice ${invoiceNumber}`,
+          text: `Tax Invoice ${invoiceNumber} from Sun Systems`
+        });
+        return;
+      }
+
+      // Desktop browser fallback: Download PDF and open WhatsApp Web with invoice details
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      const clean = getCleanWhatsAppNumber(targetPhone);
+      const promptMsg = `Greetings from Sun Systems CTC!\nTax Invoice ${invoiceNumber} for ₹${sale.finalAmount.toLocaleString('en-IN')} has been generated.\nPDF file ${fileName} is downloaded to your device for customer sharing.`;
+      const shareUrl = clean
+        ? `https://api.whatsapp.com/send?phone=${clean}&text=${encodeURIComponent(promptMsg)}`
+        : `https://api.whatsapp.com/send?text=${encodeURIComponent(promptMsg)}`;
+      window.open(shareUrl, '_blank');
+    } catch (err: any) {
+      console.error('WhatsApp PDF error:', err);
+      openWhatsAppInvoice(sale, stockItem, targetPhone);
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    setIsGeneratingPdf(true);
+    try {
+      const res = await generateBillPdfBlob();
+      if (!res) return;
+      const url = URL.createObjectURL(res.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = res.fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Download error:', err);
+    } finally {
+      setIsGeneratingPdf(false);
+    }
   };
 
   const handleCopyText = () => {
@@ -79,12 +173,21 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
           </div>
           <div className="flex items-center space-x-2">
             <button
+              onClick={handleDownloadPdf}
+              disabled={isGeneratingPdf}
+              className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-700 transition-colors shadow-sm"
+              title="Download Invoice PDF"
+            >
+              {isGeneratingPdf ? <Loader2 className="w-4 h-4 text-emerald-400 animate-spin" /> : <Download className="w-4 h-4 text-emerald-400" />}
+              <span>PDF</span>
+            </button>
+            <button
               onClick={handlePrint}
               className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-700 transition-colors shadow-sm"
-              title="Print Bill / Save PDF"
+              title="Print Single Bill Copy"
             >
               <Printer className="w-4 h-4 text-amber-400" />
-              <span>Print Bill</span>
+              <span>Print (1 Copy)</span>
             </button>
             <button
               onClick={onClose}
@@ -188,6 +291,7 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
                 const itmQty = Number(itm.quantity || 1);
                 const itmRate = Number(itm.unitPrice || 0);
                 const itmAmount = Number(itm.amount || (itmRate * itmQty));
+                const itemSpecs = itm.specsSummary || itm.description;
                 return (
                   <div key={idx} className="py-2.5 flex items-start justify-between text-xs sm:text-sm text-black">
                     <div className="w-8 pt-0.5">{idx + 1}</div>
@@ -195,6 +299,11 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
                       <div className="font-semibold text-black">
                         {itm.productName}
                       </div>
+                      {itemSpecs && (
+                        <div className="text-[10px] sm:text-[11px] text-gray-700 mt-0.5 leading-snug">
+                          {itemSpecs}
+                        </div>
+                      )}
                       {itm.serialNumber && (
                         <div className="text-[10px] sm:text-[11px] text-gray-600 font-mono mt-0.5">
                           S/N: {itm.serialNumber}
@@ -221,6 +330,11 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
                 <div className="font-semibold text-black">
                   {productDesc}
                 </div>
+                {stockItem && (stockItem.cpu || stockItem.ram || stockItem.storage || stockItem.display) && (
+                  <div className="text-[10px] sm:text-[11px] text-gray-700 mt-0.5 leading-snug">
+                    {[stockItem.cpu, stockItem.ram, stockItem.storage, stockItem.display, stockItem.gpu].filter(Boolean).join(' • ')}
+                  </div>
+                )}
                 {sale.serialNumber && (
                   <div className="text-[10px] sm:text-[11px] text-gray-600 font-mono mt-0.5">
                     S/N: {sale.serialNumber}
@@ -352,15 +466,34 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
               className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500"
             />
             <button
-              onClick={handleSendWhatsApp}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center space-x-1.5 shadow-lg shadow-emerald-600/30 transition-all active:scale-98 shrink-0 font-mono"
+              onClick={handleSendWhatsAppPdf}
+              disabled={isGeneratingPdf}
+              className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center space-x-1.5 shadow-lg shadow-emerald-600/30 transition-all active:scale-98 shrink-0 font-mono"
             >
-              <MessageCircle className="w-4 h-4 fill-current" />
-              <span>Send WhatsApp</span>
+              {isGeneratingPdf ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  <span>Generating PDF...</span>
+                </>
+              ) : (
+                <>
+                  <MessageCircle className="w-4 h-4 fill-current" />
+                  <span>Send WhatsApp (PDF)</span>
+                </>
+              )}
             </button>
           </div>
 
           <div className="flex gap-2 pt-1 font-mono">
+            <button
+              onClick={handleDownloadPdf}
+              disabled={isGeneratingPdf}
+              className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 flex items-center justify-center space-x-1.5 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Download PDF</span>
+            </button>
+
             <button
               onClick={handleCopyText}
               className="flex-1 py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 flex items-center justify-center space-x-1.5 transition-colors"

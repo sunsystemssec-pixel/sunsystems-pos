@@ -158,16 +158,17 @@ export const CommandBar: React.FC<CommandBarProps> = ({ currentUserRole, onComma
             className="flex-1 flex items-center justify-center space-x-1 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 py-1.5 rounded-lg text-slate-200 text-[11px] font-medium transition-colors"
           >
             <Plus className="w-3 h-3 text-indigo-400" />
-            <span>PUR</span>
+            <span>PURCHASE</span>
           </button>
         )}
 
         <button
           onClick={() => onQuickAction('EXPENSE')}
-          className="flex-1 flex items-center justify-center space-x-1 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 py-1.5 rounded-lg text-slate-200 text-[11px] font-medium transition-colors"
+          className="flex-1 flex items-center justify-center space-x-1 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 py-1.5 rounded-lg text-rose-300 text-[11px] font-bold transition-all shadow-sm"
+          title="Record Shop Expense"
         >
-          <Plus className="w-3 h-3 text-amber-400" />
-          <span>EXP</span>
+          <Plus className="w-3 h-3 text-rose-400" />
+          <span>EXPENSE</span>
         </button>
 
         <button
