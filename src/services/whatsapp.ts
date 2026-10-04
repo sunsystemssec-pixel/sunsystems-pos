@@ -96,7 +96,12 @@ export const generateWhatsAppSaleMessage = (sale: Sale, stockItem?: StockItem): 
       const itmTotal = Number(itm.amount || (itmRate * itmQty));
       const itmRateStr = `₹${itmRate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       const itmTotalStr = `₹${itmTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-      let line = `${idx + 1}. *${itm.productName}*\n   Qty: ${itmQty} | Rate: ${itmRateStr} | Total: ${itmTotalStr}`;
+      let line = `${idx + 1}. *${itm.productName}*`;
+      const itemSpecs = (itm.specsSummary || itm.description || '').trim();
+      if (itemSpecs) {
+        line += `\n   ${itemSpecs}`;
+      }
+      line += `\n   Qty: ${itmQty} | Rate: ${itmRateStr} | Total: ${itmTotalStr}`;
       if (itm.serialNumber) {
         line += `\n   S/N: ${itm.serialNumber}`;
       }
@@ -106,16 +111,29 @@ export const generateWhatsAppSaleMessage = (sale: Sale, stockItem?: StockItem): 
     const qty = Number(sale.quantity || 1);
     const unitRate = Number(sale.unitPrice || (sale.sellingPrice / qty));
     let productDesc = sale.productName;
+    const cat = (stockItem?.category || '').toLowerCase();
+    const isLaptop = cat.includes('laptop');
+    const isDesktop = cat.includes('desktop');
+    let itemSpecs = '';
     if (stockItem) {
-      const specs: string[] = [];
-      if (stockItem.ram && !productDesc.includes(stockItem.ram)) specs.push(stockItem.ram);
-      if (stockItem.storage && !productDesc.includes(stockItem.storage)) specs.push(stockItem.storage);
-      if (specs.length > 0 && !productDesc.includes('(')) {
-        productDesc = `${productDesc} (${specs.join('/')})`;
+      if (isLaptop) {
+        itemSpecs = [stockItem.cpu, stockItem.ram, stockItem.storage, stockItem.display].filter(Boolean).join(' • ');
+      } else if (isDesktop) {
+        itemSpecs = [stockItem.cpu, stockItem.ram, stockItem.storage].filter(Boolean).join(' • ');
+      } else if (stockItem.description) {
+        itemSpecs = stockItem.description.trim();
       }
     }
     const rateStr = `₹${unitRate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    itemsSection = `1. *${productDesc}*\n   Qty: ${qty} | Rate: ${rateStr} | Total: ${subtotalStr}${sale.serialNumber ? `\n   S/N: ${sale.serialNumber}` : ''}`;
+    let line = `1. *${productDesc}*`;
+    if (itemSpecs) {
+      line += `\n   ${itemSpecs}`;
+    }
+    line += `\n   Qty: ${qty} | Rate: ${rateStr} | Total: ${subtotalStr}`;
+    if (sale.serialNumber) {
+      line += `\n   S/N: ${sale.serialNumber}`;
+    }
+    itemsSection = line;
   }
 
   return `*${COMPANY_INFO.name.toUpperCase()}*

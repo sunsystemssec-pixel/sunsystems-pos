@@ -114,7 +114,20 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
       }
     } else {
       const defaultPrice = Number(item.targetSellingPrice || Math.round(Number(item.purchaseCost || 0) * 1.25) || 0);
-      const specs = [item.cpu, item.ram, item.storage, item.display].filter(Boolean).join(' • ');
+      const cat = (item.category || '').toLowerCase();
+      const isLaptop = cat.includes('laptop');
+      const isDesktop = cat.includes('desktop');
+      let specs = '';
+      if (isLaptop) {
+        specs = [item.cpu, item.ram, item.storage, item.display].filter(Boolean).join(' • ');
+      } else if (isDesktop) {
+        // Desktops: processor, ram, storage (no screen)
+        specs = [item.cpu, item.ram, item.storage].filter(Boolean).join(' • ');
+      } else {
+        // Other items: only if description is available, otherwise blank
+        specs = (item.description || '').trim();
+      }
+
       const newItem: SaleItem = {
         stockId: item.id,
         productName: `${item.brand} ${item.model}`.trim(),

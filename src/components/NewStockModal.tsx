@@ -189,11 +189,11 @@ export const NewStockModal: React.FC<NewStockModalProps> = ({
     if (item.targetSellingPrice) setTargetSellingPrice(item.targetSellingPrice);
   };
 
-  const handleAddToBatch = () => {
+  const handleAddAnotherItem = () => {
     setErrorMessage(null);
     const fullProductName = model.trim() || `${brand} ${category}`;
     if (!fullProductName.trim()) {
-      setErrorMessage('Please specify the product model or description before adding to invoice.');
+      setErrorMessage('Please specify the product model or description before adding another item.');
       return;
     }
     if (numUnitCost <= 0) {
@@ -202,7 +202,7 @@ export const NewStockModal: React.FC<NewStockModalProps> = ({
     }
 
     const newItem: BatchPurchaseItem = {
-      id: `batch-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       category,
       brand: brand.trim(),
       model: fullProductName.trim(),
@@ -223,14 +223,14 @@ export const NewStockModal: React.FC<NewStockModalProps> = ({
 
     setPurchaseBatchItems(prev => [...prev, newItem]);
 
-    // Reset current item inputs for next item in batch
+    // Reset current item inputs for next item
     setModel('');
     setQuantity(1);
     setUnitCost('');
     setTargetSellingPrice('');
     setSerialNumber('');
     setServiceTag('');
-    sunAI.speak(`Added ${newItem.brand} ${newItem.model} to purchase invoice.`);
+    sunAI.speak(`Added ${newItem.brand} ${newItem.model}. You can now enter another item.`);
   };
 
   const handleRemoveFromBatch = (id: string) => {
@@ -965,22 +965,22 @@ export const NewStockModal: React.FC<NewStockModalProps> = ({
             </div>
           )}
 
-          {/* Multi-Item Purchase Batch Cart & Controls */}
+          {/* Multi-Item Purchase Controls */}
           {entryType === 'PURCHASE' && (
             <div className="space-y-2 pt-1">
               <button
                 type="button"
-                onClick={handleAddToBatch}
+                onClick={handleAddAnotherItem}
                 className="w-full bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 font-bold py-2.5 rounded-xl text-xs flex items-center justify-center space-x-1.5 transition-all shadow-sm active:scale-[0.99]"
               >
                 <Plus className="w-4 h-4 text-amber-400" />
-                <span>+ ADD THIS ITEM TO INVOICE BATCH</span>
+                <span>+ ADD ANOTHER ITEM</span>
               </button>
 
               {purchaseBatchItems.length > 0 && (
                 <div className="bg-slate-950 border border-amber-500/30 rounded-2xl p-3 space-y-2">
                   <div className="flex items-center justify-between text-xs font-bold text-amber-400 border-b border-slate-800 pb-1.5">
-                    <span>Items in Invoice ({purchaseBatchItems.length})</span>
+                    <span>Items in this Purchase Bill ({purchaseBatchItems.length})</span>
                     <span>Total: ₹{purchaseBatchItems.reduce((s, i) => s + i.totalCost, 0).toLocaleString('en-IN')}</span>
                   </div>
                   <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
@@ -1024,11 +1024,11 @@ export const NewStockModal: React.FC<NewStockModalProps> = ({
                   ? `RESTOCK • ADD +${quantity} UNITS TO EXISTING STOCK`
                   : entryType === 'PURCHASE'
                   ? purchaseBatchItems.length > 0
-                    ? `SAVE PURCHASE INVOICE (${purchaseBatchItems.length + (model.trim() && numUnitCost > 0 ? 1 : 0)} ITEMS • ₹${(
+                    ? `SAVE PURCHASE BILL (${purchaseBatchItems.length + (model.trim() && numUnitCost > 0 ? 1 : 0)} Items • ₹${(
                         purchaseBatchItems.reduce((s, i) => s + i.totalCost, 0) +
                         (model.trim() && numUnitCost > 0 ? totalCost : 0)
                       ).toLocaleString('en-IN')})`
-                    : `RECORD PURCHASE • ${quantity} UNITS (₹${totalCost.toLocaleString('en-IN')})`
+                    : `SAVE PURCHASE BILL (${quantity} Unit${quantity > 1 ? 's' : ''} • ₹${totalCost.toLocaleString('en-IN')})`
                   : `ADD ${quantity} UNITS TO INVENTORY`}
               </span>
             </button>

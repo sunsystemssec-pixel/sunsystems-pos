@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Sale, StockItem } from '../types';
+import { db } from '../services/db';
 import { COMPANY_INFO } from '../data/seedData';
 import { formatToDDMMYY, generateWhatsAppSaleMessage, openWhatsAppInvoice, getCleanWhatsAppNumber, numberToWordsIndian } from '../services/whatsapp';
 import { X, Printer, MessageCircle, Copy, Check, Plus, Smartphone, FileText, Download, Loader2 } from 'lucide-react';
@@ -22,6 +23,7 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
   const [targetPhone, setTargetPhone] = useState(sale.customerMobile || '');
   const [copied, setCopied] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const allStock = useMemo(() => db.getStock(), []);
 
   const cleanPhone = getCleanWhatsAppNumber(targetPhone);
   const qty = Number(sale.quantity || 1);
@@ -291,7 +293,22 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
                 const itmQty = Number(itm.quantity || 1);
                 const itmRate = Number(itm.unitPrice || 0);
                 const itmAmount = Number(itm.amount || (itmRate * itmQty));
-                const itemSpecs = itm.specsSummary || itm.description;
+                const matchedStock = itm.stockId ? allStock.find(s => s.id === itm.stockId) : null;
+                const cat = (itm.category || matchedStock?.category || '').toLowerCase();
+                const isLaptop = cat.includes('laptop');
+                const isDesktop = cat.includes('desktop');
+
+                let itemSpecs = (itm.specsSummary || itm.description || '').trim();
+                if (!itemSpecs && matchedStock) {
+                  if (isLaptop) {
+                    itemSpecs = [matchedStock.cpu, matchedStock.ram, matchedStock.storage, matchedStock.display].filter(Boolean).join(' • ');
+                  } else if (isDesktop) {
+                    itemSpecs = [matchedStock.cpu, matchedStock.ram, matchedStock.storage].filter(Boolean).join(' • ');
+                  } else {
+                    itemSpecs = (matchedStock.description || '').trim();
+                  }
+                }
+
                 return (
                   <div key={idx} className="py-2.5 flex items-start justify-between text-xs sm:text-sm text-black">
                     <div className="w-8 pt-0.5">{idx + 1}</div>
@@ -299,11 +316,11 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
                       <div className="font-semibold text-black">
                         {itm.productName}
                       </div>
-                      {itemSpecs && (
+                      {itemSpecs ? (
                         <div className="text-[10px] sm:text-[11px] text-gray-700 mt-0.5 leading-snug">
                           {itemSpecs}
                         </div>
-                      )}
+                      ) : null}
                       {itm.serialNumber && (
                         <div className="text-[10px] sm:text-[11px] text-gray-600 font-mono mt-0.5">
                           S/N: {itm.serialNumber}
@@ -328,13 +345,31 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
               <div className="w-8 pt-0.5">1</div>
               <div className="flex-1 pr-2">
                 <div className="font-semibold text-black">
-                  {productDesc}
+                  {sale.productName || productDesc}
                 </div>
-                {stockItem && (stockItem.cpu || stockItem.ram || stockItem.storage || stockItem.display) && (
-                  <div className="text-[10px] sm:text-[11px] text-gray-700 mt-0.5 leading-snug">
-                    {[stockItem.cpu, stockItem.ram, stockItem.storage, stockItem.display, stockItem.gpu].filter(Boolean).join(' • ')}
-                  </div>
-                )}
+                {(() => {
+                  const cat = (stockItem?.category || '').toLowerCase();
+                  const isLaptop = cat.includes('laptop');
+                  const isDesktop = cat.includes('desktop');
+                  let singleSpecs = '';
+                  if (stockItem) {
+                    if (isLaptop) {
+                      singleSpecs = [stockItem.cpu, stockItem.ram, stockItem.storage, stockItem.display].filter(Boolean).join(' • ');
+                    } else if (isDesktop) {
+                      singleSpecs = [stockItem.cpu, stockItem.ram, stockItem.storage].filter(Boolean).join(' • ');
+                    } else if (stockItem.description) {
+                      singleSpecs = stockItem.description.trim();
+                    }
+                  }
+                  if (!singleSpecs && sale.notes) {
+                    singleSpecs = sale.notes.trim();
+                  }
+                  return singleSpecs ? (
+                    <div className="text-[10px] sm:text-[11px] text-gray-700 mt-0.5 leading-snug">
+                      {singleSpecs}
+                    </div>
+                  ) : null;
+                })()}
                 {sale.serialNumber && (
                   <div className="text-[10px] sm:text-[11px] text-gray-600 font-mono mt-0.5">
                     S/N: {sale.serialNumber}
