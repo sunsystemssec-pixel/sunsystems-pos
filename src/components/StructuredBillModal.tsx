@@ -381,8 +381,12 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
                 const isLaptop = cat.includes('laptop');
                 const isDesktop = cat.includes('desktop');
 
-                let itemSpecs = (itm.specsSummary || itm.description || '').trim();
-                if (!itemSpecs && matchedStock) {
+                let itemSpecs = '';
+                if (itm.description !== undefined && itm.description !== null) {
+                  itemSpecs = itm.description.trim();
+                } else if (itm.specsSummary !== undefined && itm.specsSummary !== null) {
+                  itemSpecs = itm.specsSummary.trim();
+                } else if (matchedStock) {
                   if (isLaptop) {
                     itemSpecs = [matchedStock.cpu, matchedStock.ram, matchedStock.storage, matchedStock.display].filter(Boolean).join(' • ');
                   } else if (isDesktop) {

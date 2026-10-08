@@ -3,7 +3,7 @@ import { User, PaymentMode, StockItem, Sale, SaleItem } from '../types';
 import { db } from '../services/db';
 import { sunAI } from '../services/sunAI';
 import { StructuredBillModal } from './StructuredBillModal';
-import { X, Search, Mic, MicOff, ShoppingBag, Plus, Minus, Check, AlertCircle, Trash2, ArrowLeft, PlusCircle } from 'lucide-react';
+import { X, Search, Mic, MicOff, ShoppingBag, Plus, Minus, Check, AlertCircle, Trash2, ArrowLeft, PlusCircle, Edit2, RotateCcw } from 'lucide-react';
 
 interface NewSaleModalProps {
   currentUser: User;
@@ -29,6 +29,7 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
 
   // Multi-item bill cart
   const [billItems, setBillItems] = useState<SaleItem[]>([]);
+  const [editingDescIdx, setEditingDescIdx] = useState<number | null>(null);
   const [completedSale, setCompletedSale] = useState<Sale | null>(null);
 
   const [discount, setDiscount] = useState<number | ''>(0);
@@ -209,6 +210,34 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
   const handleRemoveItem = (index: number) => {
     const updated = billItems.filter((_, i) => i !== index);
     setBillItems(updated);
+    if (editingDescIdx === index) {
+      setEditingDescIdx(null);
+    }
+  };
+
+  const handleUpdateItemDescription = (index: number, newDesc: string) => {
+    const updated = [...billItems];
+    updated[index].description = newDesc;
+    updated[index].specsSummary = newDesc;
+    setBillItems(updated);
+  };
+
+  const handleResetItemDescription = (index: number) => {
+    const item = billItems[index];
+    const stockRef = availableStock.find(s => s.id === item.stockId);
+    if (!stockRef) return;
+    const cat = (stockRef.category || '').toLowerCase();
+    const isLaptop = cat.includes('laptop');
+    const isDesktop = cat.includes('desktop');
+    let defaultSpecs = '';
+    if (isLaptop) {
+      defaultSpecs = [stockRef.cpu, stockRef.ram, stockRef.storage, stockRef.display].filter(Boolean).join(' • ');
+    } else if (isDesktop) {
+      defaultSpecs = [stockRef.cpu, stockRef.ram, stockRef.storage].filter(Boolean).join(' • ');
+    } else {
+      defaultSpecs = (stockRef.description || '').trim();
+    }
+    handleUpdateItemDescription(index, defaultSpecs);
   };
 
   const subtotal = billItems.reduce((sum, itm) => sum + (itm.amount || 0), 0);
@@ -539,11 +568,73 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
                               {item.productName}
                             </h4>
                           </div>
-                          {(item.specsSummary || item.description) && (
-                            <div className="text-[10px] text-slate-400 mt-0.5 ml-7">
-                              {item.specsSummary || item.description}
-                            </div>
-                          )}
+                          {/* Description Section with Edit Option */}
+                          <div className="ml-7 mt-1">
+                            {editingDescIdx === idx ? (
+                              <div className="space-y-1.5 bg-slate-900 border border-amber-500/40 rounded-xl p-2.5 mt-1 shadow-inner">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-bold text-amber-300 flex items-center space-x-1">
+                                    <Edit2 className="w-3 h-3 text-amber-400" />
+                                    <span>Edit Description / Specs:</span>
+                                  </span>
+                                  {stockRef && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleResetItemDescription(idx)}
+                                      className="text-[9px] text-sky-400 hover:text-sky-300 flex items-center space-x-0.5 transition-colors"
+                                      title="Reset description to original stock specifications"
+                                    >
+                                      <RotateCcw className="w-2.5 h-2.5" />
+                                      <span>Reset to stock specs</span>
+                                    </button>
+                                  )}
+                                </div>
+                                <input
+                                  type="text"
+                                  value={item.description || ''}
+                                  onChange={(e) => handleUpdateItemDescription(idx, e.target.value)}
+                                  placeholder="e.g. Core i5 11th Gen • 16GB RAM • 512GB SSD"
+                                  className="w-full bg-slate-950 border border-slate-700 focus:border-amber-400 text-slate-100 text-xs px-2.5 py-1.5 rounded-lg outline-none font-mono"
+                                  autoFocus
+                                />
+                                <div className="flex items-center justify-between pt-0.5">
+                                  <span className="text-[9px] text-slate-500 italic">
+                                    Appears on printout, PDF &amp; WhatsApp
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingDescIdx(null)}
+                                    className="bg-amber-500 hover:bg-amber-400 text-slate-950 text-[10px] font-bold px-3 py-1 rounded-md transition-colors"
+                                  >
+                                    Done
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex items-center space-x-2">
+                                <div
+                                  onClick={() => setEditingDescIdx(idx)}
+                                  className="text-[11px] text-slate-300 font-mono cursor-pointer hover:text-amber-300 transition-colors flex items-center space-x-1"
+                                  title="Click to edit or change description"
+                                >
+                                  {item.description || item.specsSummary ? (
+                                    <span>{item.description || item.specsSummary}</span>
+                                  ) : (
+                                    <span className="italic text-slate-500 text-[10px]">No description (click to add)</span>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingDescIdx(idx)}
+                                  className="text-[9px] font-bold text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-1.5 py-0.5 rounded flex items-center space-x-1 shrink-0 transition-colors"
+                                  title="Edit description for bill"
+                                >
+                                  <Edit2 className="w-2.5 h-2.5" />
+                                  <span>{item.description || item.specsSummary ? 'Edit' : '+ Add Desc'}</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
                           {item.serialNumber && (
                             <div className="text-[10px] text-amber-400 font-mono mt-0.5 ml-7 font-bold">
                               S/N: {item.serialNumber}
