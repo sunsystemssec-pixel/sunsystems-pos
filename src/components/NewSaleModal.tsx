@@ -3,7 +3,7 @@ import { User, PaymentMode, StockItem, Sale, SaleItem } from '../types';
 import { db } from '../services/db';
 import { sunAI } from '../services/sunAI';
 import { StructuredBillModal } from './StructuredBillModal';
-import { X, Search, Mic, MicOff, ShoppingBag, Plus, Minus, Check, AlertCircle, Trash2, ArrowLeft, PlusCircle, Edit2, RotateCcw } from 'lucide-react';
+import { X, Search, Mic, MicOff, ShoppingBag, Plus, Minus, Check, AlertCircle, Trash2, ArrowLeft, PlusCircle, Edit2, RotateCcw, Calendar, FileText } from 'lucide-react';
 
 interface NewSaleModalProps {
   currentUser: User;
@@ -23,6 +23,14 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
     );
   }, []);
 
+  const todayStr = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }, []);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [isAddingMore, setIsAddingMore] = useState(false);
@@ -31,6 +39,13 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
   const [billItems, setBillItems] = useState<SaleItem[]>([]);
   const [editingDescIdx, setEditingDescIdx] = useState<number | null>(null);
   const [completedSale, setCompletedSale] = useState<Sale | null>(null);
+
+  // Sale Date (allows entering old-date historical bills with /addition sub-billing)
+  const [saleDate, setSaleDate] = useState(todayStr);
+
+  const previewInvoiceNumber = useMemo(() => {
+    return db.getBillNumberForDate(saleDate);
+  }, [saleDate, billItems.length]);
 
   const [discount, setDiscount] = useState<number | ''>(0);
   const [customerName, setCustomerName] = useState('Walk-in Customer');
@@ -276,7 +291,9 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
         paymentMode,
         items: billItems,
         stockId: billItems[0]?.stockId,
-        notes: notes.trim()
+        notes: notes.trim(),
+        date: saleDate,
+        invoiceNumber: previewInvoiceNumber
       }, currentUser);
 
       sunAI.speak(`Sale with ${billItems.length} items recorded. Opening structured tax invoice.`);
@@ -720,6 +737,55 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
                   );
                 })}
               </div>
+            </div>
+
+            {/* Bill Date & Assigned Invoice Number (supports Old Date Sub-Billing) */}
+            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center space-x-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Bill Date &amp; Invoice No</span>
+                </span>
+                {saleDate < todayStr && (
+                  <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-bold">
+                    Old-Date Sub-Bill (/addition)
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5 pt-1">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Bill Date
+                  </label>
+                  <input
+                    type="date"
+                    value={saleDate}
+                    max={todayStr}
+                    onChange={(e) => setSaleDate(e.target.value || todayStr)}
+                    className="w-full bg-slate-900 border border-slate-700 focus:border-amber-400 rounded-xl px-2.5 py-1.5 text-xs text-slate-100 font-mono focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Assigned Bill No
+                  </label>
+                  <div className="w-full bg-slate-900/90 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono font-bold text-amber-400 flex items-center justify-between">
+                    <span>{previewInvoiceNumber}</span>
+                    <FileText className="w-3.5 h-3.5 text-slate-500" />
+                  </div>
+                </div>
+              </div>
+
+              {saleDate < todayStr ? (
+                <p className="text-[10px] text-amber-400/90 leading-tight">
+                  ℹ️ Historical date selected: Serial numbers from today remain unchanged. This bill is assigned as a sub-bill (<span className="font-mono font-bold">{previewInvoiceNumber}</span>) under the last bill of that date.
+                </p>
+              ) : (
+                <p className="text-[10px] text-slate-500 leading-tight">
+                  Regular continuous sequential invoice (<span className="font-mono text-slate-400">{previewInvoiceNumber}</span>).
+                </p>
+              )}
             </div>
 
             {/* Customer Details */}

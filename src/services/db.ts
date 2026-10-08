@@ -100,6 +100,89 @@ class DatabaseService {
     return `SS-${String(nextNum).padStart(4, '0')}`;
   }
 
+  // Generates sequential Bill / Invoice serial number strictly for bills (e.g. SS-0001, SS-0002)
+  // For back-dated bills (older dates): assigns an addition suffix based on the last bill of that date
+  // (e.g. SS-0004/1, SS-0004/2) without mutating or consuming the main sequential counter.
+  public getBillNumberForDate(targetDate?: string): string {
+    const today = this.getTimestamp().date;
+    const isOldDate = targetDate && targetDate < today;
+
+    if (!isOldDate) {
+      return this.getNextBillNumber();
+    }
+
+    const sales = this.getSales();
+
+    // 1. Check if bills already exist on targetDate
+    const sameDateSales = sales.filter(s => s.date === targetDate);
+
+    if (sameDateSales.length > 0) {
+      let highestBaseNum = 0;
+      let highestBaseStr = '';
+
+      sameDateSales.forEach(s => {
+        const inv = s.invoiceNumber || '';
+        const match = inv.match(/^SS-(\d+)/i);
+        if (match) {
+          const base = parseInt(match[1], 10);
+          if (base > highestBaseNum) {
+            highestBaseNum = base;
+            highestBaseStr = `SS-${match[1]}`;
+          }
+        }
+      });
+
+      if (highestBaseStr) {
+        let maxSuffix = 0;
+        sales.forEach(s => {
+          const inv = s.invoiceNumber || '';
+          if (inv.startsWith(highestBaseStr + '/')) {
+            const suffixStr = inv.substring((highestBaseStr + '/').length);
+            const suffixNum = parseInt(suffixStr, 10);
+            if (!isNaN(suffixNum) && suffixNum > maxSuffix) {
+              maxSuffix = suffixNum;
+            }
+          }
+        });
+
+        return `${highestBaseStr}/${maxSuffix + 1}`;
+      }
+    }
+
+    // 2. If no bills on targetDate, find the latest bill prior to targetDate
+    const priorSales = sales
+      .filter(s => s.date && s.date < (targetDate as string))
+      .sort((a, b) => b.date.localeCompare(a.date));
+
+    let priorBaseStr = '';
+    for (const s of priorSales) {
+      const inv = s.invoiceNumber || '';
+      const match = inv.match(/^SS-(\d+)/i);
+      if (match) {
+        priorBaseStr = `SS-${match[1]}`;
+        break;
+      }
+    }
+
+    if (!priorBaseStr) {
+      priorBaseStr = 'SS-0001';
+    }
+
+    let maxSuffix = 0;
+    sales.forEach(s => {
+      const inv = s.invoiceNumber || '';
+      if (inv.startsWith(priorBaseStr + '/')) {
+        const suffixStr = inv.substring((priorBaseStr + '/').length);
+        const suffixNum = parseInt(suffixStr, 10);
+        if (!isNaN(suffixNum) && suffixNum > maxSuffix) {
+          maxSuffix = suffixNum;
+        }
+      }
+    });
+
+    return `${priorBaseStr}/${maxSuffix + 1}`;
+  }
+
   public verifyPin(userId: string, pin: string): boolean {
     const user = this.getUsers().find(u => u.id === userId);
     if (!user) return false;
@@ -583,9 +666,15 @@ class DatabaseService {
     });
   }
 
-  public addSale(saleData: Omit<Sale, 'id' | 'date' | 'time' | 'enteredBy' | 'finalAmount' | 'status'>, currentUser: User): Sale {
+  public addSale(saleData: Omit<Sale, 'id' | 'date' | 'time' | 'enteredBy' | 'finalAmount' | 'status'> & { date?: string; time?: string; invoiceNumber?: string }, currentUser: User): Sale {
     const stock = this.getStock();
-    const { date, time } = this.getTimestamp();
+    const { date: todayDate, time: currentTime } = this.getTimestamp();
+
+    const saleDate = saleData.date && saleData.date.trim() ? saleData.date.trim() : todayDate;
+    const saleTime = saleData.time && saleData.time.trim() ? saleData.time.trim() : currentTime;
+    const assignedInvoiceNumber = saleData.invoiceNumber && saleData.invoiceNumber.trim()
+      ? saleData.invoiceNumber.trim()
+      : this.getBillNumberForDate(saleDate);
 
     const hasItemsList = saleData.items && Array.isArray(saleData.items) && saleData.items.length > 0;
     
@@ -623,9 +712,9 @@ class DatabaseService {
     const newSale: Sale = {
       ...saleData,
       id: this.generateId('SALE'),
-      invoiceNumber: this.getNextBillNumber(),
-      date,
-      time,
+      invoiceNumber: assignedInvoiceNumber,
+      date: saleDate,
+      time: saleTime,
       productName: primaryProductName,
       serialNumber: primarySerial,
       quantity: totalQty,
@@ -669,7 +758,7 @@ class DatabaseService {
           const remaining = Math.max(0, currentAvail - itemQty);
           stItem.availableQuantity = remaining;
           stItem.soldTo = saleData.customerName;
-          stItem.soldDate = date;
+          stItem.soldDate = saleDate;
           if (remaining <= 0) {
             stItem.status = 'SOLD';
           }
@@ -692,12 +781,12 @@ class DatabaseService {
             totalCost: 0,
             targetSellingPrice: item.unitPrice,
             supplier: 'Pending Purchase Intake',
-            purchaseDate: date,
+            purchaseDate: saleDate,
             status: 'SOLD',
             availableQuantity: 0,
             quantity: itemQty,
             enteredBy: currentUser.name,
-            timestamp: `${date} ${time}`,
+            timestamp: `${saleDate} ${saleTime}`,
             notes: `Billed during sale ${newSale.invoiceNumber}. Pending supplier purchase entry.`
           };
           stock.unshift(newCustomStock);
@@ -718,7 +807,7 @@ class DatabaseService {
           item.availableQuantity = remaining;
           item.soldTo = saleData.customerName;
           item.soldPrice = finalAmount;
-          item.soldDate = date;
+          item.soldDate = saleDate;
           if (remaining <= 0) {
             item.status = 'SOLD';
           }
@@ -763,6 +852,10 @@ class DatabaseService {
 
     const sales = this.getSales();
     sales.unshift(newSale);
+    sales.sort((a, b) => {
+      if (b.date !== a.date) return b.date.localeCompare(a.date);
+      return (b.time || '').localeCompare(a.time || '');
+    });
     localStorage.setItem('sun_sales', JSON.stringify(sales));
 
     // Save or update customer record with address if provided

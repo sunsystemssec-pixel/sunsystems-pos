@@ -246,8 +246,8 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl rounded-3xl p-4 sm:p-6 shadow-2xl my-auto space-y-4 max-h-[96vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:static print:inset-auto print:z-auto print:bg-transparent print:p-0 print:m-0 print:overflow-visible print:block">
+      <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl rounded-3xl p-4 sm:p-6 shadow-2xl my-auto space-y-4 max-h-[96vh] overflow-y-auto print:bg-transparent print:border-none print:shadow-none print:p-0 print:m-0 print:max-w-none print:max-h-none print:w-full print:rounded-none print:overflow-visible">
         {/* Top Control Bar (Hidden on print) */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-800 print:hidden">
           <div className="flex items-center space-x-2">
@@ -288,7 +288,7 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
         {/* ========================================================================= */}
         <div
           id="printable-bill"
-          className="bg-white text-black p-6 sm:p-10 shadow-2xl font-mono text-[12px] sm:text-[13px] leading-normal selection:bg-slate-200"
+          className="bg-white text-black p-6 sm:p-10 shadow-2xl print:shadow-none print:p-0 print:m-0 print:border-none font-mono text-[12px] sm:text-[13px] leading-normal selection:bg-slate-200"
           style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' }}
         >
           {/* Header */}
