@@ -1,19 +1,30 @@
-import React, { useState } from 'react';
-import { Mic, MicOff, Send, Camera, Plus, Sparkles } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Mic, MicOff, Send, Camera, Plus, Sparkles, SlidersHorizontal } from 'lucide-react';
 import { sunAI } from '../services/sunAI';
+import { voiceTraining, VoiceLanguage } from '../services/voiceTraining';
 
 interface CommandBarProps {
   currentUserRole?: string;
   onCommandSubmit: (text: string) => void;
   onOpenScan: () => void;
   onQuickAction: (action: 'SALE' | 'STOCK' | 'PURCHASE' | 'EXPENSE') => void;
+  onOpenVoiceTraining?: () => void;
 }
 
-export const CommandBar: React.FC<CommandBarProps> = ({ currentUserRole, onCommandSubmit, onOpenScan, onQuickAction }) => {
+export const CommandBar: React.FC<CommandBarProps> = ({ currentUserRole, onCommandSubmit, onOpenScan, onQuickAction, onOpenVoiceTraining }) => {
   const [inputText, setInputText] = useState('');
   const [isListening, setIsListening] = useState(false);
-  const [speechLang, setSpeechLang] = useState('en-IN');
+  const [speechLang, setSpeechLang] = useState<VoiceLanguage>(voiceTraining.getSelectedLanguage());
   const [speechError, setSpeechError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSpeechLang(voiceTraining.getSelectedLanguage());
+  }, []);
+
+  const handleLangChange = (lang: VoiceLanguage) => {
+    setSpeechLang(lang);
+    voiceTraining.setSelectedLanguage(lang);
+  };
 
   const handleStartVoice = () => {
     setSpeechError(null);
@@ -49,11 +60,11 @@ export const CommandBar: React.FC<CommandBarProps> = ({ currentUserRole, onComma
   };
 
   const sampleVoicePrompts = [
-    'Sold Dell 5420 to Ramesh for 26500 UPI',
-    'Add HP 840 G7 to stock serial ABC123 cost 22000 A grade',
-    'Purchased five Lenovo T490 from ABC Computers for 110000',
-    'Paid 2500 cash for courier',
-    'Ramesh gave 10000 cash against credit',
+    'New sale',
+    'बिक्री दर्ज करो (Sale)',
+    'కొత్త బిల్లు చేయ్ (Telugu)',
+    'Add purchase 5 Lenovo T490',
+    'Paid 250 cash for courier',
     "Show today's sales"
   ];
 
@@ -62,19 +73,32 @@ export const CommandBar: React.FC<CommandBarProps> = ({ currentUserRole, onComma
       <div className="flex items-center justify-between mb-3 text-xs">
         <div className="flex items-center space-x-1 text-amber-400 font-semibold">
           <Sparkles className="w-3.5 h-3.5" />
-          <span>SUN AI Natural Input</span>
+          <span>SUN AI Multilingual Voice</span>
         </div>
-        <div className="flex items-center space-x-1.5">
-          <span className="text-slate-400 text-[11px]">Lang:</span>
-          <select
-            value={speechLang}
-            onChange={(e) => setSpeechLang(e.target.value)}
-            className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded px-1.5 py-0.5"
-          >
-            <option value="en-IN">English (India)</option>
-            <option value="te-IN">Telugu (తెలుగు)</option>
-            <option value="hi-IN">Hindi (हिन्दी)</option>
-          </select>
+        <div className="flex items-center space-x-2">
+          {onOpenVoiceTraining && (
+            <button
+              type="button"
+              onClick={onOpenVoiceTraining}
+              className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[11px] font-bold px-2 py-0.5 rounded-lg flex items-center space-x-1 transition-colors"
+              title="Train Voice Keywords & Test"
+            >
+              <SlidersHorizontal className="w-3 h-3" />
+              <span>Train Voice</span>
+            </button>
+          )}
+          <div className="flex items-center space-x-1 bg-slate-800 border border-slate-700 rounded-lg px-1.5 py-0.5">
+            <span className="text-slate-400 text-[10px]">Lang:</span>
+            <select
+              value={speechLang}
+              onChange={(e) => handleLangChange(e.target.value as VoiceLanguage)}
+              className="bg-transparent text-slate-200 text-xs font-semibold outline-none cursor-pointer"
+            >
+              <option value="en-IN" className="bg-slate-900 text-slate-100">🇬🇧 English</option>
+              <option value="hi-IN" className="bg-slate-900 text-slate-100">🇮🇳 हिन्दी</option>
+              <option value="te-IN" className="bg-slate-900 text-slate-100">🇮🇳 తెలుగు</option>
+            </select>
+          </div>
         </div>
       </div>
 

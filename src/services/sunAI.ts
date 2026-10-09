@@ -1,8 +1,10 @@
 import { db } from './db';
 import { User, Sale, StockItem, Purchase, Expense, CreditEntry, DebitEntry, PaymentMode } from '../types';
+import { voiceTraining, VoiceLanguage } from './voiceTraining';
 
 export interface ParsedTransaction {
-  intent: 'SALE' | 'STOCK' | 'PURCHASE' | 'EXPENSE' | 'CREDIT' | 'DEBIT' | 'DAILY_CLOSING' | 'QUERY' | 'UNKNOWN';
+  intent: 'SALE' | 'STOCK' | 'PURCHASE' | 'EXPENSE' | 'CREDIT' | 'DEBIT' | 'DAILY_CLOSING' | 'QUERY' | 'ACTION_MODAL' | 'UNKNOWN';
+  actionType?: 'SALE' | 'STOCK' | 'PURCHASE' | 'EXPENSE' | 'DAILY_CLOSING';
   queryType?: 'SALES' | 'EXPENSES' | 'STOCK' | 'CREDIT' | 'AUDIT' | 'CASH' | 'STAFF_ACTIVITY' | 'SEARCH_SERIAL';
   queryParam?: string;
   data: Record<string, any>;
@@ -22,7 +24,7 @@ class SunAIService {
         this.recognition = new SpeechRecognition();
         this.recognition.continuous = false;
         this.recognition.interimResults = false;
-        this.recognition.lang = 'en-IN';
+        this.recognition.lang = voiceTraining.getSelectedLanguage();
       }
     }
   }
@@ -31,13 +33,14 @@ class SunAIService {
     onResult: (text: string) => void,
     onError: (err: any) => void,
     onEnd: () => void,
-    langCode: string = 'en-IN'
+    langCode?: VoiceLanguage | string
   ) {
     if (!this.recognition) {
       onError('Speech recognition not supported in this browser. Please use text input or standard mobile Chrome/Safari.');
       return;
     }
-    this.recognition.lang = langCode;
+    const targetLang = (langCode as VoiceLanguage) || voiceTraining.getSelectedLanguage();
+    this.recognition.lang = targetLang;
     this.isListening = true;
 
     this.recognition.onresult = (event: any) => {
@@ -71,28 +74,110 @@ class SunAIService {
     }
   }
 
-  public speak(text: string) {
+  public speak(text: string, langCode?: VoiceLanguage | string) {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 1.0;
       utterance.pitch = 1.0;
-      utterance.lang = 'en-IN';
+      utterance.lang = langCode || voiceTraining.getSelectedLanguage();
       window.speechSynthesis.speak(utterance);
     }
   }
 
-  public parseCommand(input: string, currentUser: User): ParsedTransaction {
+  public parseCommand(input: string, currentUser: User, langCode?: VoiceLanguage): ParsedTransaction {
     const text = input.trim();
     const lower = text.toLowerCase();
+    const activeLang = langCode || voiceTraining.getSelectedLanguage();
 
-    // 1. QUERY INTENTS
-    if (lower.includes('show') || lower.includes('find') || lower.includes('how much') || lower.includes('what is') || lower.includes('dikhao') || lower.includes('chupinchu')) {
+    // 0. TRAINED VOICE KEYWORD MATCHING (English, Hindi, Telugu)
+    const trainedMatch = voiceTraining.matchAction(text, activeLang);
+    if (trainedMatch) {
+      if (trainedMatch.action === 'OPEN_SALE') {
+        return {
+          intent: 'ACTION_MODAL',
+          actionType: 'SALE',
+          data: {},
+          missingFields: [],
+          summary: 'Opening New Sales Billing voucher',
+          originalText: text
+        };
+      }
+      if (trainedMatch.action === 'OPEN_PURCHASE') {
+        return {
+          intent: 'ACTION_MODAL',
+          actionType: 'PURCHASE',
+          data: {},
+          missingFields: [],
+          summary: 'Opening Purchase Intake voucher',
+          originalText: text
+        };
+      }
+      if (trainedMatch.action === 'OPEN_EXPENSE') {
+        return {
+          intent: 'ACTION_MODAL',
+          actionType: 'EXPENSE',
+          data: {},
+          missingFields: [],
+          summary: 'Opening Expense Entry voucher',
+          originalText: text
+        };
+      }
+      if (trainedMatch.action === 'VIEW_STOCK') {
+        return {
+          intent: 'QUERY',
+          queryType: 'STOCK',
+          data: {},
+          missingFields: [],
+          summary: 'Viewing Stock Inventory',
+          originalText: text
+        };
+      }
+      if (trainedMatch.action === 'VIEW_SALES') {
+        return {
+          intent: 'QUERY',
+          queryType: 'SALES',
+          data: {},
+          missingFields: [],
+          summary: 'Viewing Sales Records',
+          originalText: text
+        };
+      }
+      if (trainedMatch.action === 'VIEW_CREDIT') {
+        return {
+          intent: 'QUERY',
+          queryType: 'CREDIT',
+          data: {},
+          missingFields: [],
+          summary: 'Viewing Customer Credit Ledger',
+          originalText: text
+        };
+      }
+      if (trainedMatch.action === 'DAILY_CLOSING') {
+        return {
+          intent: 'DAILY_CLOSING',
+          data: {},
+          missingFields: [],
+          summary: 'Initiate Daily Closing & Cash Reconciliation',
+          originalText: text
+        };
+      }
+    }
+
+    // 1. QUERY INTENTS (English, Hindi, Telugu)
+    if (
+      lower.includes('show') || lower.includes('find') || lower.includes('how much') || lower.includes('what is') ||
+      lower.includes('dikhao') || lower.includes('दिखाओ') || lower.includes('ढूंढो') || lower.includes('चेक करो') ||
+      lower.includes('chupinchu') || lower.includes('చూపించు') || lower.includes('vethuku') || lower.includes('వెతుకు') || lower.includes('చెక్ చేయ్')
+    ) {
       return this.parseQuery(text, lower);
     }
 
     // 2. DAILY CLOSING
-    if (lower.includes('close') && (lower.includes('account') || lower.includes('day') || lower.includes('today'))) {
+    if (
+      (lower.includes('close') && (lower.includes('account') || lower.includes('day') || lower.includes('today'))) ||
+      lower.includes('हिसाब बंद') || lower.includes('दिन बंद') || lower.includes('రోజు ముగింపు') || lower.includes('closing')
+    ) {
       return {
         intent: 'DAILY_CLOSING',
         data: {},
@@ -102,13 +187,23 @@ class SunAIService {
       };
     }
 
-    // 3. EXPENSE INTENT
-    if (lower.includes('expense') || lower.includes('courier') || lower.includes('packaging') || lower.includes('rent') || lower.includes('tea') || lower.includes('travel') || (lower.includes('paid') && !lower.includes('bought') && !lower.includes('purchase'))) {
+    // 3. EXPENSE INTENT (English, Hindi, Telugu)
+    if (
+      lower.includes('expense') || lower.includes('courier') || lower.includes('packaging') || lower.includes('rent') || lower.includes('tea') || lower.includes('travel') ||
+      lower.includes('खर्चा') || lower.includes('खर्च') || lower.includes('किराया') || lower.includes('चाय') || lower.includes('kharcha') ||
+      lower.includes('ఖర్చు') || lower.includes('ఖర్చులు') || lower.includes('టీ') || lower.includes('కిరాయి') || lower.includes('kharchu') ||
+      (lower.includes('paid') && !lower.includes('bought') && !lower.includes('purchase'))
+    ) {
       return this.parseExpense(text, lower, currentUser);
     }
 
-    // 4. CREDIT INTENT
-    if (lower.includes('on credit') || lower.includes('credit lo') || lower.includes('credit against') || lower.includes('credit par') || (lower.includes('credit') && !lower.includes('card'))) {
+    // 4. CREDIT INTENT (English, Hindi, Telugu)
+    if (
+      lower.includes('on credit') || lower.includes('credit lo') || lower.includes('credit against') || lower.includes('credit par') ||
+      lower.includes('उधार') || lower.includes('खाता') || lower.includes('बाकी') || lower.includes('udhar') ||
+      lower.includes('అప్పు') || lower.includes('బాకీ') || lower.includes('క్రెడిట్') ||
+      (lower.includes('credit') && !lower.includes('card'))
+    ) {
       return this.parseCredit(text, lower, currentUser);
     }
 
@@ -117,23 +212,38 @@ class SunAIService {
       return this.parseDebit(text, lower, currentUser);
     }
 
-    // 6. PURCHASE INTENT
-    if (lower.includes('purchased') || lower.includes('bought') || lower.includes('purchase') || lower.includes('khareeda') || lower.includes('konnanu')) {
+    // 6. PURCHASE INTENT (English, Hindi, Telugu)
+    if (
+      lower.includes('purchased') || lower.includes('bought') || lower.includes('purchase') ||
+      lower.includes('khareeda') || lower.includes('खरीदा') || lower.includes('खरीद') || lower.includes('माल आया') || lower.includes('पर्चेस') ||
+      lower.includes('konnanu') || lower.includes('కొన్నాను') || lower.includes('కొనుగోలు') || lower.includes('పర్చేస్') || lower.includes('సరుకు')
+    ) {
       return this.parsePurchase(text, lower, currentUser);
     }
 
-    // 7. STOCK INTENT
-    if (lower.includes('add to stock') || lower.includes('stock in') || lower.includes('stock add') || (lower.includes('add') && (lower.includes('stock') || lower.includes('serial') || lower.includes('grade')))) {
+    // 7. STOCK INTENT (English, Hindi, Telugu)
+    if (
+      lower.includes('add to stock') || lower.includes('stock in') || lower.includes('stock add') ||
+      lower.includes('स्टॉक') || lower.includes('స్టాక్') ||
+      (lower.includes('add') && (lower.includes('stock') || lower.includes('serial') || lower.includes('grade')))
+    ) {
       return this.parseStock(text, lower, currentUser);
     }
 
-    // 8. SALE INTENT
-    if (lower.includes('sold') || lower.includes('sale') || lower.includes('sell') || lower.includes('becha') || lower.includes('ammanu')) {
+    // 8. SALE INTENT (English, Hindi, Telugu)
+    if (
+      lower.includes('sold') || lower.includes('sale') || lower.includes('sell') || lower.includes('bill') ||
+      lower.includes('becha') || lower.includes('बेचा') || lower.includes('बिक्री') || lower.includes('सेल') || lower.includes('बिल') ||
+      lower.includes('ammanu') || lower.includes('అమ్మాను') || lower.includes('అమ్ము') || lower.includes('అమ్మకం') || lower.includes('సేల్') || lower.includes('బిల్లు')
+    ) {
       return this.parseSale(text, lower, currentUser);
     }
 
     // Fallback: If hardware product mentioned
-    if (lower.includes('dell') || lower.includes('hp') || lower.includes('lenovo') || lower.includes('thinkpad')) {
+    if (
+      lower.includes('dell') || lower.includes('hp') || lower.includes('lenovo') || lower.includes('thinkpad') ||
+      lower.includes('डेल') || lower.includes('లెనోవా') || lower.includes('హెచ్‌పి')
+    ) {
       return this.parseSale(text, lower, currentUser);
     }
 
@@ -141,7 +251,7 @@ class SunAIService {
       intent: 'UNKNOWN',
       data: {},
       missingFields: [],
-      summary: 'Could not clearly understand the command. You can speak naturally or use the quick actions.',
+      summary: 'Could not clearly understand the command. You can speak in English, Hindi, or Telugu, or train this phrase in Voice Training.',
       originalText: text
     };
   }

@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { User, PaymentMode, StockItem } from '../types';
 import { db } from '../services/db';
 import { sunAI } from '../services/sunAI';
-import { X, Plus, Minus, Check, PackagePlus, Cpu, HardDrive, Monitor, CheckCircle2, Building2, Store, Trash2 } from 'lucide-react';
+import { voiceTraining } from '../services/voiceTraining';
+import { X, Plus, Minus, Check, PackagePlus, Cpu, HardDrive, Monitor, CheckCircle2, Building2, Store, Trash2, Mic, MicOff, Sparkles } from 'lucide-react';
 
 interface NewStockModalProps {
   currentUser: User;
@@ -93,6 +94,95 @@ export const NewStockModal: React.FC<NewStockModalProps> = ({
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('Bank Transfer');
   const [notes, setNotes] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isListening, setIsListening] = useState(false);
+
+  const handleVoicePurchase = () => {
+    if (isListening) {
+      sunAI.stopListening();
+      setIsListening(false);
+      return;
+    }
+
+    setIsListening(true);
+    setErrorMessage(null);
+
+    sunAI.startListening(
+      (transcript) => {
+        setIsListening(false);
+        const text = transcript.trim();
+        const lower = text.toLowerCase();
+
+        // 1. Brand
+        if (lower.includes('hp') || lower.includes('एचपी') || lower.includes('హెచ్‌పి')) setBrand('HP');
+        else if (lower.includes('lenovo') || lower.includes('लेनोवो') || lower.includes('లెనోవా')) setBrand('Lenovo');
+        else if (lower.includes('dell') || lower.includes('डेल') || lower.includes('డెల్')) setBrand('Dell');
+        else if (lower.includes('apple') || lower.includes('macbook')) setBrand('Apple');
+
+        // 2. Model & Category
+        if (lower.includes('desktop') || lower.includes('डेस्कटॉप') || lower.includes('డెస్క్‌టాప్')) {
+          setCategory('Desktops');
+        } else if (lower.includes('ram') || lower.includes('memory')) {
+          setCategory('RAM / Memory');
+        } else if (lower.includes('ssd') || lower.includes('nvme')) {
+          setCategory('SSD / Storage');
+        } else if (lower.includes('keyboard') || lower.includes('mouse')) {
+          setCategory('Peripherals (Keyboards/Mice)');
+        }
+
+        // Specific models
+        if (lower.includes('5420')) setModel('Latitude 5420');
+        else if (lower.includes('5400')) setModel('Latitude 5400');
+        else if (lower.includes('5430')) setModel('Latitude 5430');
+        else if (lower.includes('840 g7') || lower.includes('840g7')) setModel('EliteBook 840 G7');
+        else if (lower.includes('840 g8') || lower.includes('840g8')) setModel('EliteBook 840 G8');
+        else if (lower.includes('t490')) setModel('ThinkPad T490');
+        else if (lower.includes('t14')) setModel('ThinkPad T14');
+        else if (!model) {
+          const words = text.split(/\s+/);
+          if (words.length >= 2) setModel(words.slice(1, 4).join(' '));
+        }
+
+        // 3. Quantity
+        let q = 1;
+        const qMatch = text.match(/(?:quantity|qty|units|pieces|nos)\s*([0-9]+)/i) ||
+                      text.match(/([0-9]+)\s*(?:units|pieces|nos|qty|quantity|laptops|desktops)/i);
+        if (qMatch) {
+          q = Number(qMatch[1]) || 1;
+        } else {
+          const vNum = voiceTraining.parseVernacularNumbers(text);
+          if (vNum && vNum < 50) q = vNum;
+        }
+        if (q > 0) setQuantity(q);
+
+        // 4. Cost / Price
+        let cost = 0;
+        const costMatch = text.match(/(?:cost|rate|for|price|rs\.?|inr|₹)\s*([0-9]{3,7})/i) ||
+                          text.match(/([0-9]{4,7})/);
+        if (costMatch) {
+          cost = Number(costMatch[1]);
+        }
+        if (cost > 0) {
+          setUnitCost(cost);
+          setTargetSellingPrice(Math.round(cost * 1.25));
+        }
+
+        // 5. Supplier
+        const supMatch = text.match(/(?:from|supplier|party)\s+([A-Za-z0-9\s]+?)(?:\s+(?:for|cost|price|[0-9]{3,}))/i);
+        if (supMatch && supMatch[1].trim()) {
+          setSupplier(supMatch[1].trim());
+        }
+
+        sunAI.speak(`Understood entry for ${q} units`);
+      },
+      (err) => {
+        setIsListening(false);
+        console.warn('Purchase voice error:', err);
+      },
+      () => {
+        setIsListening(false);
+      }
+    );
+  };
 
   const numUnitCost = Number(unitCost) || 0;
   const totalCost = quantity * numUnitCost;
@@ -458,6 +548,31 @@ export const NewStockModal: React.FC<NewStockModalProps> = ({
         )}
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+          {/* Voice Dictate Entry Assistant */}
+          <div className="bg-gradient-to-r from-slate-950 to-slate-900 p-3 rounded-2xl border border-slate-800 flex items-center justify-between">
+            <div className="text-xs">
+              <span className="font-bold text-amber-300 flex items-center space-x-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span>Voice Dictate Entry</span>
+              </span>
+              <span className="text-[10px] text-slate-400 block">
+                {isListening ? 'Listening... Speak brand, model, qty & cost' : 'Speak in EN, हिन्दी, or తెలుగు (e.g. "5 Dell 5420 cost 22000")'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleVoicePurchase}
+              className={`font-bold px-3 py-1.5 rounded-xl text-xs flex items-center space-x-1.5 transition-all shadow ${
+                isListening
+                  ? 'bg-rose-600 text-white animate-pulse'
+                  : 'bg-amber-500 hover:bg-amber-400 text-slate-950'
+              }`}
+            >
+              {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+              <span>{isListening ? 'Stop' : 'Speak'}</span>
+            </button>
+          </div>
+
           {/* Category Selector */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1">

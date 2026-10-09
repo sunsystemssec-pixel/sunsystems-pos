@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { User, Expense } from '../types';
 import { db } from '../services/db';
 import { sunAI } from '../services/sunAI';
-import { X, Receipt, Check, Camera, DollarSign, Tag, FileText } from 'lucide-react';
+import { voiceTraining } from '../services/voiceTraining';
+import { X, Receipt, Check, Camera, DollarSign, Tag, FileText, Mic, MicOff, Sparkles } from 'lucide-react';
 
 interface NewExpenseModalProps {
   currentUser: User;
@@ -35,8 +36,71 @@ export const NewExpenseModal: React.FC<NewExpenseModalProps> = ({
   const [description, setDescription] = useState('');
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'UPI' | 'Card' | 'Bank Transfer'>('Cash');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isListening, setIsListening] = useState(false);
 
   const numAmount = Number(amount) || 0;
+
+  const handleVoiceExpense = () => {
+    if (isListening) {
+      sunAI.stopListening();
+      setIsListening(false);
+      return;
+    }
+
+    setIsListening(true);
+    setErrorMessage(null);
+
+    sunAI.startListening(
+      (transcript) => {
+        setIsListening(false);
+        const text = transcript.trim();
+        const lower = text.toLowerCase();
+
+        // 1. Amount
+        let amt = 0;
+        const amtMatch = text.match(/(?:rs\.?|inr|₹)?\s*([0-9]{1,6})(?:\s*(?:rs|rupees|cash|upi|for))/i) ||
+                         text.match(/([0-9]{2,6})/);
+        if (amtMatch) {
+          amt = Number(amtMatch[1]);
+        } else {
+          const vNum = voiceTraining.parseVernacularNumbers(text);
+          if (vNum) amt = vNum;
+        }
+
+        if (amt > 0) setAmount(amt);
+
+        // 2. Payment mode
+        if (lower.includes('upi') || lower.includes('phonepe') || lower.includes('gpay') || lower.includes('paytm') || lower.includes('యూపీఐ') || lower.includes('यूपीआई')) {
+          setPaymentMode('UPI');
+        } else if (lower.includes('cash') || lower.includes('नकद') || lower.includes('कैश') || lower.includes('నగదు')) {
+          setPaymentMode('Cash');
+        }
+
+        // 3. Category
+        if (lower.includes('tea') || lower.includes('chai') || lower.includes('चाय') || lower.includes('టీ') || lower.includes('snacks')) {
+          setCategory('Tea, Snacks & Food');
+        } else if (lower.includes('courier') || lower.includes('कुरियर') || lower.includes('కొరియర్')) {
+          setCategory('Courier & Logistics');
+        } else if (lower.includes('rent') || lower.includes('किराया') || lower.includes('కిరాయి')) {
+          setCategory('Shop Rent & CTC Maintenance');
+        } else if (lower.includes('packaging') || lower.includes('box') || lower.includes('packing')) {
+          setCategory('Packaging Material');
+        } else if (lower.includes('cleaning') || lower.includes('safai')) {
+          setCategory('Cleaning & Janitorial');
+        }
+
+        setDescription(text);
+        sunAI.speak(`Understood ${amt > 0 ? `₹${amt} ` : ''}${text}`);
+      },
+      (err) => {
+        setIsListening(false);
+        console.warn('Expense voice error:', err);
+      },
+      () => {
+        setIsListening(false);
+      }
+    );
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,11 +176,30 @@ export const NewExpenseModal: React.FC<NewExpenseModalProps> = ({
           </div>
         )}
 
-        {errorMessage && (
-          <div className="mt-3 bg-rose-950/80 border border-rose-800 text-rose-300 p-2.5 rounded-xl text-xs">
-            {errorMessage}
+        {/* Voice Dictate Entry Assistant */}
+        <div className="mt-3 bg-gradient-to-r from-slate-950 to-slate-900 p-3 rounded-2xl border border-slate-800 flex items-center justify-between">
+          <div className="text-xs">
+            <span className="font-bold text-amber-300 flex items-center space-x-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>Voice Dictate Expense</span>
+            </span>
+            <span className="text-[10px] text-slate-400 block">
+              {isListening ? 'Listening... Speak amount & purpose' : 'Speak in EN, हिन्दी, or తెలుగు (e.g. "Tea 150 cash")'}
+            </span>
           </div>
-        )}
+          <button
+            type="button"
+            onClick={handleVoiceExpense}
+            className={`font-bold px-3 py-1.5 rounded-xl text-xs flex items-center space-x-1.5 transition-all shadow ${
+              isListening
+                ? 'bg-rose-600 text-white animate-pulse'
+                : 'bg-amber-500 hover:bg-amber-400 text-slate-950'
+            }`}
+          >
+            {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+            <span>{isListening ? 'Stop' : 'Speak'}</span>
+          </button>
+        </div>
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           {/* Category Dropdown */}

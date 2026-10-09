@@ -14,6 +14,7 @@ interface HomeScreenProps {
   onQuickAction: (action: 'SALE' | 'STOCK' | 'PURCHASE' | 'EXPENSE') => void;
   onSelectSale: (sale: Sale) => void;
   onNavigateTab: (tab: any) => void;
+  onOpenVoiceTraining?: () => void;
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
@@ -22,7 +23,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onOpenScan,
   onQuickAction,
   onSelectSale,
-  onNavigateTab
+  onNavigateTab,
+  onOpenVoiceTraining
 }) => {
   const sales = db.getSales();
   const stock = db.getStock();
@@ -89,6 +91,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         onCommandSubmit={onCommandSubmit}
         onOpenScan={onOpenScan}
         onQuickAction={onQuickAction}
+        onOpenVoiceTraining={onOpenVoiceTraining}
       />
 
       {/* Staff Daily Declaration Prompt */}

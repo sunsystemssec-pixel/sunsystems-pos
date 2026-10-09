@@ -13,6 +13,8 @@ import { DriveModal } from './components/DriveModal';
 import { NewSaleModal } from './components/NewSaleModal';
 import { NewStockModal } from './components/NewStockModal';
 import { NewExpenseModal } from './components/NewExpenseModal';
+import { VoiceTrainingModal } from './components/VoiceTrainingModal';
+import { TrainedVoiceKeyword } from './services/voiceTraining';
 import { HomeScreen } from './screens/HomeScreen';
 import { SalesScreen } from './screens/SalesScreen';
 import { StockScreen } from './screens/StockScreen';
@@ -47,6 +49,7 @@ export const App: React.FC = () => {
   const [showDriveModal, setShowDriveModal] = useState(false);
   const [showUserSwitchModal, setShowUserSwitchModal] = useState(false);
   const [showNewExpenseModal, setShowNewExpenseModal] = useState(false);
+  const [showVoiceTrainingModal, setShowVoiceTrainingModal] = useState(false);
 
   useEffect(() => {
     const unsub = db.subscribe(() => {
@@ -61,9 +64,27 @@ export const App: React.FC = () => {
     if (!currentUser) return;
     const parsed = sunAI.parseCommand(text, currentUser);
 
+    if (parsed.intent === 'ACTION_MODAL') {
+      if (parsed.actionType === 'SALE') {
+        setShowNewSaleModal(true);
+        sunAI.speak(parsed.summary || 'Opening New Sales Bill');
+      } else if (parsed.actionType === 'PURCHASE') {
+        setShowNewStockModal({ open: true, mode: 'PURCHASE' });
+        sunAI.speak(parsed.summary || 'Opening Purchase Inward Entry');
+      } else if (parsed.actionType === 'STOCK') {
+        setShowNewStockModal({ open: true, mode: 'STOCK' });
+        sunAI.speak(parsed.summary || 'Opening Stock Entry');
+      } else if (parsed.actionType === 'EXPENSE') {
+        setShowNewExpenseModal(true);
+        sunAI.speak(parsed.summary || 'Opening Expense Entry');
+      }
+      return;
+    }
+
     if (parsed.intent === 'QUERY') {
       if (parsed.queryType === 'SALES') setActiveTab('SALES');
       else if (parsed.queryType === 'STOCK') setActiveTab('STOCK');
+      else if (parsed.queryType === 'CREDIT') setActiveTab('MORE');
       else if (parsed.queryType === 'AUDIT') setActiveTab('AUDIT');
       else if (parsed.queryType === 'CASH') setActiveTab('MORE');
       else setActiveTab('SALES');
@@ -78,12 +99,30 @@ export const App: React.FC = () => {
     }
 
     if (parsed.intent === 'UNKNOWN') {
-      alert("SUN AI: Could not determine action. Please try e.g. 'Sold Dell 5420 to Ramesh for 26500 UPI' or 'Add HP 840 G7 to stock'.");
+      alert("SUN AI: Could not determine action. Please try e.g. 'New sale', 'Add purchase', or train custom voice phrases in Voice Training.");
       return;
     }
 
     setPendingTransaction(parsed);
     sunAI.speak(`Please confirm ${parsed.intent.toLowerCase()}`);
+  };
+
+  const handleVoiceAction = (action: TrainedVoiceKeyword['action'], targetValue?: string) => {
+    if (action === 'OPEN_SALE') {
+      setShowNewSaleModal(true);
+    } else if (action === 'OPEN_PURCHASE') {
+      setShowNewStockModal({ open: true, mode: 'PURCHASE' });
+    } else if (action === 'OPEN_EXPENSE') {
+      setShowNewExpenseModal(true);
+    } else if (action === 'VIEW_STOCK') {
+      setActiveTab('STOCK');
+    } else if (action === 'VIEW_SALES') {
+      setActiveTab('SALES');
+    } else if (action === 'VIEW_CREDIT') {
+      setActiveTab('MORE');
+    } else if (action === 'DAILY_CLOSING') {
+      setActiveTab('MORE');
+    }
   };
 
   const handleQuickAction = (action: 'SALE' | 'STOCK' | 'PURCHASE' | 'EXPENSE') => {
@@ -136,6 +175,7 @@ export const App: React.FC = () => {
           currentUser={currentUser}
           onOpenUserSwitch={() => setShowUserSwitchModal(true)}
           onOpenDriveModal={() => setShowDriveModal(true)}
+          onOpenVoiceTraining={() => setShowVoiceTrainingModal(true)}
           onLogout={handleLogout}
         />
 
@@ -146,6 +186,7 @@ export const App: React.FC = () => {
               onCommandSubmit={handleCommandSubmit}
               onOpenScan={() => setShowScanModal(true)}
               onQuickAction={handleQuickAction}
+              onOpenVoiceTraining={() => setShowVoiceTrainingModal(true)}
               onSelectSale={(sale: Sale) => handleEditAttempt('SALES', sale)}
               onNavigateTab={(t: MainTab) => setActiveTab(t)}
             />
@@ -271,6 +312,14 @@ export const App: React.FC = () => {
             onClose={() => setShowNewExpenseModal(false)}
             onSuccess={() => setShowNewExpenseModal(false)}
             onOpenScanModal={() => setShowScanModal(true)}
+          />
+        )}
+
+        {showVoiceTrainingModal && (
+          <VoiceTrainingModal
+            currentUser={currentUser}
+            onClose={() => setShowVoiceTrainingModal(false)}
+            onExecuteAction={handleVoiceAction}
           />
         )}
       </div>

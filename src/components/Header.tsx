@@ -3,16 +3,17 @@ import { User } from '../types';
 import { COMPANY_INFO } from '../data/seedData';
 import { db } from '../services/db';
 import { supabaseService, SupabaseSyncState } from '../services/supabase';
-import { CheckCircle, RefreshCw, AlertCircle, UserCircle, Cloud, Lock } from 'lucide-react';
+import { CheckCircle, RefreshCw, AlertCircle, UserCircle, Cloud, Lock, Mic } from 'lucide-react';
 
 interface HeaderProps {
   currentUser: User;
   onOpenUserSwitch: () => void;
   onOpenDriveModal: () => void;
+  onOpenVoiceTraining?: () => void;
   onLogout?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ currentUser, onOpenUserSwitch, onOpenDriveModal, onLogout }) => {
+export const Header: React.FC<HeaderProps> = ({ currentUser, onOpenUserSwitch, onOpenDriveModal, onOpenVoiceTraining, onLogout }) => {
   const syncStatus = db.syncStatus;
   const [sbState, setSbState] = React.useState<SupabaseSyncState>(supabaseService.state);
 
@@ -54,6 +55,17 @@ export const Header: React.FC<HeaderProps> = ({ currentUser, onOpenUserSwitch, o
             {syncStatus === 'OFFLINE' && <AlertCircle className="w-3.5 h-3.5 text-rose-400" />}
             <span className="text-[11px]">{syncStatus}</span>
           </button>
+
+          {onOpenVoiceTraining && (
+            <button
+              onClick={onOpenVoiceTraining}
+              className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 transition-colors"
+              title="AI Voice Training & Language (EN / HI / TE)"
+            >
+              <Mic className="w-3.5 h-3.5 animate-pulse" />
+              <span className="hidden sm:inline">Voice</span>
+            </button>
+          )}
 
           <div
             className={`hidden sm:flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${

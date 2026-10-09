@@ -99,9 +99,17 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
     setIsListening(true);
     sunAI.startListening(
       (transcript) => {
-        setSearchQuery(transcript);
+        let q = transcript.trim();
+        const l = q.toLowerCase();
+        if (l.includes('डेल') || l.includes('డెల్')) q = 'Dell';
+        else if (l.includes('लेनोवो') || l.includes('లెనోవా')) q = 'Lenovo';
+        else if (l.includes('एचपी') || l.includes('హెచ్‌పి')) q = 'HP';
+        else if (l.includes('थिंकपैड') || l.includes('థింక్‌ప్యాడ్')) q = 'ThinkPad';
+        else if (l.includes('एप्पल') || l.includes('ఆపిల్')) q = 'Apple';
+
+        setSearchQuery(q);
         setIsListening(false);
-        sunAI.speak(`Searching stock for ${transcript}`);
+        sunAI.speak(`Searching stock for ${q}`);
       },
       (err) => {
         console.warn('Voice search error:', err);
