@@ -15,6 +15,8 @@ export interface SunSystemsNativePlugin {
   }): Promise<{ success: boolean; error?: string }>;
   print(options?: {
     jobName?: string;
+    base64Data?: string;
+    fileName?: string;
   }): Promise<{ success: boolean; error?: string }>;
 }
 

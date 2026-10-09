@@ -57,18 +57,167 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
     }
   }
 
-  const handlePrint = async () => {
-    if (isNativeApp()) {
-      try {
-        const res = await SunSystemsNative.print({ jobName: `SunSystems_Invoice_${invoiceNumber}` });
-        if (res && res.success) {
-          return;
-        }
-      } catch (err) {
-        console.warn('Native print failed, falling back to window.print():', err);
-      }
+  const printViaIsolatedIframe = () => {
+    const billEl = document.getElementById('printable-bill');
+    if (!billEl) {
+      window.print();
+      return;
     }
-    window.print();
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.style.visibility = 'hidden';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document || iframe.contentDocument;
+    if (!doc) {
+      window.print();
+      return;
+    }
+
+    doc.open();
+    doc.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Sun Systems Invoice ${invoiceNumber}</title>
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 8mm 10mm;
+            }
+            html, body {
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #ffffff !important;
+              color: #000000 !important;
+              font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            * {
+              box-sizing: border-box !important;
+              box-shadow: none !important;
+              text-shadow: none !important;
+            }
+            #printable-bill {
+              width: 100% !important;
+              max-width: 100% !important;
+              margin: 0 !important;
+              padding: 10px 15px !important;
+              background: #ffffff !important;
+              color: #000000 !important;
+              border: none !important;
+              box-shadow: none !important;
+            }
+            table {
+              width: 100% !important;
+              border-collapse: collapse !important;
+            }
+            th, td {
+              padding: 3px 6px !important;
+            }
+            .border-t { border-top: 1px solid #000000 !important; }
+            .border-b { border-bottom: 1px solid #000000 !important; }
+            .border-dashed { border-style: dashed !important; }
+            .border-gray-400 { border-color: #666666 !important; }
+            .border-gray-300 { border-color: #999999 !important; }
+            .text-center { text-align: center !important; }
+            .text-right { text-align: right !important; }
+            .text-left { text-align: left !important; }
+            .font-bold { font-weight: bold !important; }
+            .text-xs { font-size: 11px !important; }
+            .text-sm { font-size: 12px !important; }
+            .text-base { font-size: 14px !important; }
+            .text-lg { font-size: 16px !important; }
+            .text-xl { font-size: 18px !important; }
+            .text-2xl { font-size: 22px !important; }
+            .text-black { color: #000000 !important; }
+            .text-gray-700, .text-gray-800, .text-gray-600 { color: #222222 !important; }
+            .flex { display: flex !important; }
+            .justify-between { justify-content: space-between !important; }
+            .items-start { align-items: flex-start !important; }
+            .items-center { align-items: center !important; }
+            .space-y-1 > * + * { margin-top: 3px !important; }
+            .space-y-0\\.5 > * + * { margin-top: 2px !important; }
+            .space-y-2 > * + * { margin-top: 6px !important; }
+            .my-4 { margin-top: 12px !important; margin-bottom: 12px !important; }
+            .mt-4 { margin-top: 12px !important; }
+            .mb-4 { margin-bottom: 12px !important; }
+            .pb-3 { padding-bottom: 8px !important; }
+            .pt-2 { padding-top: 6px !important; }
+            .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important; }
+            .tracking-tight { letter-spacing: -0.025em !important; }
+            .tracking-wider { letter-spacing: 0.05em !important; }
+            .uppercase { text-transform: uppercase !important; }
+          </style>
+        </head>
+        <body>
+          <div id="printable-bill">
+            ${billEl.innerHTML}
+          </div>
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    setTimeout(() => {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+      setTimeout(() => {
+        try {
+          document.body.removeChild(iframe);
+        } catch {}
+      }, 1500);
+    }, 300);
+  };
+
+  const handlePrint = async () => {
+    setIsGeneratingPdf(true);
+    try {
+      const res = await generateBillPdfBlob();
+      if (res && isNativeApp()) {
+        try {
+          const reader = new FileReader();
+          const base64Promise = new Promise<string>((resolve, reject) => {
+            reader.onloadend = () => {
+              if (reader.result) {
+                resolve(reader.result as string);
+              } else {
+                reject(new Error('Failed to read PDF blob'));
+              }
+            };
+            reader.onerror = reject;
+          });
+          reader.readAsDataURL(res.blob);
+          const base64Data = await base64Promise;
+
+          const printRes = await SunSystemsNative.print({
+            base64Data,
+            fileName: res.fileName,
+            jobName: `SunSystems_Invoice_${invoiceNumber}`
+          });
+
+          if (printRes && printRes.success) {
+            setIsGeneratingPdf(false);
+            return;
+          }
+        } catch (nativeErr) {
+          console.warn('Native PDF print failed, using isolated iframe fallback:', nativeErr);
+        }
+      }
+      printViaIsolatedIframe();
+    } catch (err) {
+      console.error('Print error:', err);
+      printViaIsolatedIframe();
+    } finally {
+      setIsGeneratingPdf(false);
+    }
   };
 
   const generateBillPdfBlob = async (): Promise<{ blob: Blob; fileName: string } | null> => {
@@ -90,6 +239,8 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
           clonedBill.style.margin = '0 auto';
           clonedBill.style.padding = '24px 32px';
           clonedBill.style.boxSizing = 'border-box';
+          clonedBill.style.boxShadow = 'none';
+          clonedBill.style.border = 'none';
         }
       }
     });
@@ -268,10 +419,11 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
             </button>
             <button
               onClick={handlePrint}
-              className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-700 transition-colors shadow-sm"
+              disabled={isGeneratingPdf}
+              className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-700 transition-colors shadow-sm disabled:opacity-50"
               title="Print Single Bill Copy"
             >
-              <Printer className="w-4 h-4 text-amber-400" />
+              {isGeneratingPdf ? <Loader2 className="w-4 h-4 text-amber-400 animate-spin" /> : <Printer className="w-4 h-4 text-amber-400" />}
               <span>Print (1 Copy)</span>
             </button>
             <button
@@ -288,7 +440,7 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
         {/* ========================================================================= */}
         <div
           id="printable-bill"
-          className="bg-white text-black p-6 sm:p-10 shadow-2xl print:shadow-none print:p-0 print:m-0 print:border-none font-mono text-[12px] sm:text-[13px] leading-normal selection:bg-slate-200"
+          className="bg-white text-black p-6 sm:p-10 shadow-none border-0 print:shadow-none print:p-0 print:m-0 print:border-none font-mono text-[12px] sm:text-[13px] leading-normal selection:bg-slate-200"
           style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' }}
         >
           {/* Header */}

@@ -15,7 +15,11 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.IOException;
 import java.util.concurrent.Executor;
 
 @CapacitorPlugin(name = "SunSystemsNative")
@@ -212,13 +216,33 @@ public class SunSystemsNativePlugin extends Plugin {
                 }
 
                 String jobName = call.getString("jobName", "SunSystems_Invoice_" + System.currentTimeMillis());
-                android.print.PrintDocumentAdapter printAdapter = getBridge().getWebView().createPrintDocumentAdapter(jobName);
+                String base64Data = call.getString("base64Data");
+                String fileName = call.getString("fileName", "SunSystems_Invoice.pdf");
 
                 android.print.PrintAttributes printAttributes = new android.print.PrintAttributes.Builder()
                     .setMediaSize(android.print.PrintAttributes.MediaSize.ISO_A4)
                     .setColorMode(android.print.PrintAttributes.COLOR_MODE_COLOR)
                     .setMinMargins(android.print.PrintAttributes.Margins.NO_MARGINS)
                     .build();
+
+                android.print.PrintDocumentAdapter printAdapter;
+
+                if (base64Data != null && !base64Data.trim().isEmpty()) {
+                    if (base64Data.contains(",")) {
+                        base64Data = base64Data.substring(base64Data.indexOf(",") + 1);
+                    }
+                    byte[] pdfBytes = Base64.decode(base64Data, Base64.DEFAULT);
+                    File cacheDir = getContext().getCacheDir();
+                    File pdfFile = new File(cacheDir, fileName);
+                    FileOutputStream fos = new FileOutputStream(pdfFile);
+                    fos.write(pdfBytes);
+                    fos.flush();
+                    fos.close();
+
+                    printAdapter = new PdfPrintDocumentAdapter(pdfFile);
+                } else {
+                    printAdapter = getBridge().getWebView().createPrintDocumentAdapter(jobName);
+                }
 
                 printManager.print(jobName, printAdapter, printAttributes);
 
@@ -232,5 +256,60 @@ public class SunSystemsNativePlugin extends Plugin {
                 call.resolve(ret);
             }
         });
+    }
+
+    public static class PdfPrintDocumentAdapter extends android.print.PrintDocumentAdapter {
+        private final File pdfFile;
+
+        public PdfPrintDocumentAdapter(File pdfFile) {
+            this.pdfFile = pdfFile;
+        }
+
+        @Override
+        public void onLayout(android.print.PrintAttributes oldAttributes,
+                             android.print.PrintAttributes newAttributes,
+                             android.os.CancellationSignal cancellationSignal,
+                             LayoutResultCallback callback,
+                             android.os.Bundle metadata) {
+            if (cancellationSignal.isCanceled()) {
+                callback.onLayoutCancelled();
+                return;
+            }
+            android.print.PrintDocumentInfo info = new android.print.PrintDocumentInfo.Builder(pdfFile.getName())
+                .setContentType(android.print.PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
+                .setPageCount(1)
+                .build();
+            callback.onLayoutFinished(info, true);
+        }
+
+        @Override
+        public void onWrite(android.print.PageRange[] pages,
+                            android.os.ParcelFileDescriptor destination,
+                            android.os.CancellationSignal cancellationSignal,
+                            WriteResultCallback callback) {
+            InputStream input = null;
+            OutputStream output = null;
+            try {
+                input = new FileInputStream(pdfFile);
+                output = new FileOutputStream(destination.getFileDescriptor());
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                while ((bytesRead = input.read(buffer)) > 0) {
+                    if (cancellationSignal.isCanceled()) {
+                        callback.onWriteCancelled();
+                        return;
+                    }
+                    output.write(buffer, 0, bytesRead);
+                }
+                callback.onWriteFinished(new android.print.PageRange[]{android.print.PageRange.ALL_PAGES});
+            } catch (Exception e) {
+                callback.onWriteFailed(e.getMessage());
+            } finally {
+                try {
+                    if (input != null) input.close();
+                    if (output != null) output.close();
+                } catch (IOException ignored) {}
+            }
+        }
     }
 }

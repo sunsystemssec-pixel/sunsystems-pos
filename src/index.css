@@ -40,17 +40,21 @@ body {
     size: A4 portrait;
     margin: 8mm 10mm;
   }
-  html, body, #root {
+  html, body {
     background-color: #ffffff !important;
     background: #ffffff !important;
     color: #000000 !important;
     margin: 0 !important;
     padding: 0 !important;
-    height: auto !important;
-    min-height: 100% !important;
-    overflow: visible !important;
+    height: 100% !important;
+    max-height: 280mm !important;
+    overflow: hidden !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+  }
+  #root {
+    max-height: 280mm !important;
+    overflow: hidden !important;
   }
   /* Obliterate all dark backdrops, blurs, and shadows everywhere during print */
   *, *::before, *::after {
