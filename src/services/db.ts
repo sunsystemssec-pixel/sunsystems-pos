@@ -907,13 +907,27 @@ class DatabaseService {
     if (idx === -1) throw new Error('Sale not found');
 
     const oldSale = sales[idx];
-    const qty = updates.quantity ?? oldSale.quantity ?? 1;
-    const unitPrice = updates.unitPrice ?? oldSale.unitPrice ?? (oldSale.sellingPrice / qty);
-    const sellingPrice = updates.sellingPrice ?? (unitPrice * qty);
-    const discount = updates.discount ?? oldSale.discount;
-    const finalAmount = sellingPrice - discount;
+    let qty = updates.quantity ?? oldSale.quantity ?? 1;
+    let sellingPrice = updates.sellingPrice ?? oldSale.sellingPrice;
+    let unitPrice = updates.unitPrice ?? oldSale.unitPrice ?? (sellingPrice / qty);
 
-    const updatedSale = { 
+    if (updates.items && Array.isArray(updates.items) && updates.items.length > 0) {
+      qty = updates.items.reduce((sum, itm) => sum + (Number(itm.quantity) || 1), 0);
+      sellingPrice = updates.items.reduce((sum, itm) => sum + (Number(itm.amount) || ((Number(itm.quantity) || 1) * Number(itm.unitPrice || 0))), 0);
+      unitPrice = qty > 0 ? Math.round(sellingPrice / qty) : 0;
+      if (updates.items.length === 1) {
+        updates.productName = updates.items[0].productName;
+        updates.serialNumber = updates.items[0].serialNumber || '';
+      } else {
+        updates.productName = updates.items.map(i => `${i.productName} (x${i.quantity})`).join(', ');
+        updates.serialNumber = updates.items.map(i => i.serialNumber).filter(Boolean).join(', ');
+      }
+    }
+
+    const discount = updates.discount ?? oldSale.discount ?? 0;
+    const finalAmount = Math.max(0, sellingPrice - discount);
+
+    const updatedSale: Sale = { 
       ...oldSale, 
       ...updates, 
       quantity: qty, 
@@ -921,6 +935,7 @@ class DatabaseService {
       sellingPrice, 
       discount, 
       finalAmount,
+      warrantyTerms: updates.warrantyTerms !== undefined ? updates.warrantyTerms : oldSale.warrantyTerms,
       customerAddress: updates.customerAddress !== undefined ? updates.customerAddress : oldSale.customerAddress
     };
     sales[idx] = updatedSale;

@@ -180,8 +180,14 @@ public class SunSystemsNativePlugin extends Plugin {
                     getActivity().startActivity(shareIntent);
                     launchedDirect = true;
                 } catch (Exception waEx) {
-                    shareIntent.setPackage(null);
-                    shareIntent.removeExtra("jid");
+                    try {
+                        shareIntent.setPackage("com.whatsapp.w4b");
+                        getActivity().startActivity(shareIntent);
+                        launchedDirect = true;
+                    } catch (Exception wbEx) {
+                        shareIntent.setPackage(null);
+                        shareIntent.removeExtra("jid");
+                    }
                 }
             }
 
@@ -189,6 +195,44 @@ public class SunSystemsNativePlugin extends Plugin {
                 Intent chooser = Intent.createChooser(shareIntent, "Share Invoice PDF");
                 chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                 getActivity().startActivity(chooser);
+            }
+
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            JSObject ret = new JSObject();
+            ret.put("success", false);
+            ret.put("error", e.getMessage());
+            call.resolve(ret);
+        }
+    }
+
+    @PluginMethod
+    public void openWhatsAppDirect(PluginCall call) {
+        try {
+            String phone = call.getString("phone", "");
+            String text = call.getString("text", "");
+            String cleanPhone = phone.replaceAll("[^0-9]", "");
+            if (cleanPhone.length() == 10) {
+                cleanPhone = "91" + cleanPhone;
+            }
+
+            String url = "https://api.whatsapp.com/send?phone=" + cleanPhone + "&text=" + java.net.URLEncoder.encode(text, "UTF-8");
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setData(Uri.parse(url));
+            intent.setPackage("com.whatsapp");
+
+            try {
+                getActivity().startActivity(intent);
+            } catch (Exception e1) {
+                try {
+                    intent.setPackage("com.whatsapp.w4b");
+                    getActivity().startActivity(intent);
+                } catch (Exception e2) {
+                    intent.setPackage(null);
+                    getActivity().startActivity(intent);
+                }
             }
 
             JSObject ret = new JSObject();
@@ -219,10 +263,10 @@ public class SunSystemsNativePlugin extends Plugin {
                 String base64Data = call.getString("base64Data");
                 String fileName = call.getString("fileName", "SunSystems_Invoice.pdf");
 
+                // Standard ISO A4 with standard printable margins for WiFi, Bluetooth and USB printers
                 android.print.PrintAttributes printAttributes = new android.print.PrintAttributes.Builder()
                     .setMediaSize(android.print.PrintAttributes.MediaSize.ISO_A4)
                     .setColorMode(android.print.PrintAttributes.COLOR_MODE_COLOR)
-                    .setMinMargins(android.print.PrintAttributes.Margins.NO_MARGINS)
                     .build();
 
                 android.print.PrintDocumentAdapter printAdapter;
@@ -275,11 +319,12 @@ public class SunSystemsNativePlugin extends Plugin {
                 callback.onLayoutCancelled();
                 return;
             }
+            boolean changed = !newAttributes.equals(oldAttributes);
             android.print.PrintDocumentInfo info = new android.print.PrintDocumentInfo.Builder(pdfFile.getName())
                 .setContentType(android.print.PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
                 .setPageCount(1)
                 .build();
-            callback.onLayoutFinished(info, true);
+            callback.onLayoutFinished(info, changed);
         }
 
         @Override

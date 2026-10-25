@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { User } from '../types';
 import { db } from '../services/db';
 import { driveService } from '../services/googleDrive';
@@ -6,7 +6,7 @@ import {
   DollarSign, ShoppingBag, Receipt, CreditCard, Users, Building2,
   FileText, Download, Shield, Cloud, RotateCcw, ChevronRight,
   Calculator, UserPlus, Plus, Trash2, Eye, EyeOff, KeyRound, CheckCircle2, X,
-  Database, RefreshCw, Server, Lock
+  Database, RefreshCw, Server, Lock, TrendingUp, Calendar
 } from 'lucide-react';
 import { supabaseService, SUPABASE_URL, SUPABASE_ANON_KEY, SupabaseSyncState } from '../services/supabase';
 import { NewExpenseModal } from '../components/NewExpenseModal';
@@ -61,6 +61,116 @@ export const MoreScreen: React.FC<MoreScreenProps> = ({
   const [actualCashInput, setActualCashInput] = useState<number>(cashExpected);
   const [varianceReason, setVarianceReason] = useState<string>('');
   const [closingMessage, setClosingMessage] = useState<string | null>(null);
+
+  // Profit & Loss Date Range State (Owner Anand)
+  const firstDayOfMonth = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  }, []);
+  const [profitStartDate, setProfitStartDate] = useState(firstDayOfMonth);
+  const [profitEndDate, setProfitEndDate] = useState(today);
+
+  const allSales = db.getSales();
+  const allStock = db.getStock();
+  const allExpenses = db.getExpenses();
+
+  const profitPeriodSales = useMemo(() => {
+    return allSales.filter(s => s.date >= profitStartDate && s.date <= profitEndDate);
+  }, [allSales, profitStartDate, profitEndDate]);
+
+  const profitPeriodExpenses = useMemo(() => {
+    return allExpenses.filter(e => e.date >= profitStartDate && e.date <= profitEndDate);
+  }, [allExpenses, profitStartDate, profitEndDate]);
+
+  const totalPeriodRevenue = useMemo(() => {
+    return profitPeriodSales.reduce((sum, s) => sum + s.finalAmount, 0);
+  }, [profitPeriodSales]);
+
+  const totalPeriodExpenses = useMemo(() => {
+    return profitPeriodExpenses.reduce((sum, e) => sum + e.amount, 0);
+  }, [profitPeriodExpenses]);
+
+  // Compute Cost of Goods Sold (COGS) & Line-Item Profit
+  const { totalPeriodCOGS, salesWithCost } = useMemo(() => {
+    let sumCOGS = 0;
+    const list = profitPeriodSales.map(sale => {
+      let saleCOGS = 0;
+      if (sale.items && sale.items.length > 0) {
+        sale.items.forEach(itm => {
+          const stockRef = allStock.find(s => s.id === itm.stockId);
+          const unitCost = stockRef ? Number(stockRef.totalCost || stockRef.purchaseCost || 0) : 0;
+          saleCOGS += unitCost * (itm.quantity || 1);
+        });
+      } else {
+        const stockRef = allStock.find(s => s.id === sale.stockId || (sale.serialNumber && s.serialNumber === sale.serialNumber));
+        const unitCost = stockRef ? Number(stockRef.totalCost || stockRef.purchaseCost || 0) : 0;
+        saleCOGS = unitCost * (sale.quantity || 1);
+      }
+      sumCOGS += saleCOGS;
+      const saleProfit = sale.finalAmount - saleCOGS;
+      const saleMargin = sale.finalAmount > 0 ? ((saleProfit / sale.finalAmount) * 100) : 0;
+      return {
+        sale,
+        saleCOGS,
+        saleProfit,
+        saleMargin
+      };
+    });
+    return { totalPeriodCOGS: sumCOGS, salesWithCost: list };
+  }, [profitPeriodSales, allStock]);
+
+  const grossProfit = totalPeriodRevenue - totalPeriodCOGS;
+  const netProfit = grossProfit - totalPeriodExpenses;
+  const netMarginPercent = totalPeriodRevenue > 0 ? ((netProfit / totalPeriodRevenue) * 100) : 0;
+  const grossMarginPercent = totalPeriodRevenue > 0 ? ((grossProfit / totalPeriodRevenue) * 100) : 0;
+  const totalUnitsSold = useMemo(() => {
+    return profitPeriodSales.reduce((sum, s) => sum + (s.quantity || 1), 0);
+  }, [profitPeriodSales]);
+
+  const exportProfitCSV = () => {
+    const rows: (string | number)[][] = [
+      ['SUN SYSTEMS CTC - PROFIT & LOSS REPORT'],
+      [`Date Range: ${profitStartDate} to ${profitEndDate}`],
+      [`Generated On: ${today}`],
+      [],
+      ['METRIC', 'AMOUNT (₹)'],
+      ['Total Sales Revenue', totalPeriodRevenue],
+      ['Cost of Goods Sold (COGS)', totalPeriodCOGS],
+      ['Gross Profit', grossProfit],
+      ['Shop Operating Expenses', totalPeriodExpenses],
+      ['Net Profit', netProfit],
+      ['Net Profit Margin', `${netMarginPercent.toFixed(1)}%`],
+      ['Total Invoices Count', profitPeriodSales.length],
+      ['Total Units Sold', totalUnitsSold],
+      [],
+      ['ITEMIZED SALES TRANSACTIONS'],
+      ['Date', 'Invoice No', 'Customer', 'Product / Items', 'Units', 'Selling Price (₹)', 'Purchase Cost (₹)', 'Gross Profit (₹)', 'Margin (%)', 'Payment Mode']
+    ];
+
+    salesWithCost.forEach(({ sale, saleCOGS, saleProfit, saleMargin }) => {
+      rows.push([
+        sale.date,
+        sale.invoiceNumber || sale.id,
+        sale.customerName,
+        sale.productName,
+        sale.quantity || 1,
+        sale.finalAmount,
+        saleCOGS,
+        saleProfit,
+        `${saleMargin.toFixed(1)}%`,
+        sale.paymentMode
+      ]);
+    });
+
+    const csvContent = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `SunSystems_Profit_Report_${profitStartDate}_to_${profitEndDate}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const handleCloseDay = () => {
     db.addDailyClosing({
@@ -154,6 +264,7 @@ export const MoreScreen: React.FC<MoreScreenProps> = ({
   const isOwner = currentUser.role === 'OWNER';
 
   const menuItems = [
+    ...(isOwner ? [{ id: 'PROFIT_REPORT', title: 'Profit Calculation & Margins', desc: 'Date-range profit, COGS & sales breakdown', icon: <TrendingUp className="w-5 h-5 text-emerald-400" /> }] : []),
     ...(isOwner ? [{ id: 'CLOSING', title: 'Daily Closing & Cash Count', desc: 'Reconcile cash & lock end-of-day', icon: <Calculator className="w-5 h-5 text-amber-400" /> }] : []),
     ...(isOwner ? [{ id: 'PURCHASES', title: 'Purchases & Invoices', desc: 'Supplier batch intakes & receipts', icon: <ShoppingBag className="w-5 h-5 text-indigo-400" /> }] : []),
     { id: 'EXPENSES', title: 'Daily Expenses', desc: 'Courier, packaging, rent & tea expenses', icon: <Receipt className="w-5 h-5 text-rose-400" /> },
@@ -238,6 +349,287 @@ export const MoreScreen: React.FC<MoreScreenProps> = ({
           >
             <span>← Back to Menu</span>
           </button>
+
+          {/* 0. PROFIT & LOSS REPORT SUBVIEW (Owner Anand) */}
+          {activeSubView === 'PROFIT_REPORT' && (
+            <div className="space-y-4">
+              {/* Header */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-sm text-slate-100 flex items-center space-x-2">
+                    <TrendingUp className="w-4 h-4 text-emerald-400" />
+                    <span>PROFIT &amp; LOSS REPORT</span>
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Net profit = (Sales Revenue - Stock Intake Cost) - Shop Expenses
+                  </p>
+                </div>
+                <button
+                  onClick={exportProfitCSV}
+                  className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-xl flex items-center space-x-1.5 shadow-md shadow-emerald-600/20"
+                  title="Download Profit & Loss CSV Spreadsheet"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export CSV</span>
+                </button>
+              </div>
+
+              {/* Date Filter Card with Presets */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-3 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center space-x-1.5">
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span>Selected Date Range</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    {profitPeriodSales.length} bills in period
+                  </span>
+                </div>
+
+                {/* Preset Chips */}
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProfitStartDate(today);
+                      setProfitEndDate(today);
+                    }}
+                    className={`text-[10px] px-2.5 py-1 rounded-lg border font-semibold transition-all ${
+                      profitStartDate === today && profitEndDate === today
+                        ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Today
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const y = new Date();
+                      y.setDate(y.getDate() - 1);
+                      const yStr = y.toISOString().split('T')[0];
+                      setProfitStartDate(yStr);
+                      setProfitEndDate(yStr);
+                    }}
+                    className="text-[10px] px-2.5 py-1 rounded-lg border bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 font-semibold"
+                  >
+                    Yesterday
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d7 = new Date();
+                      d7.setDate(d7.getDate() - 7);
+                      setProfitStartDate(d7.toISOString().split('T')[0]);
+                      setProfitEndDate(today);
+                    }}
+                    className="text-[10px] px-2.5 py-1 rounded-lg border bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 font-semibold"
+                  >
+                    Last 7 Days
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProfitStartDate(firstDayOfMonth);
+                      setProfitEndDate(today);
+                    }}
+                    className={`text-[10px] px-2.5 py-1 rounded-lg border font-semibold transition-all ${
+                      profitStartDate === firstDayOfMonth && profitEndDate === today
+                        ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    This Month
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d30 = new Date();
+                      d30.setDate(d30.getDate() - 30);
+                      setProfitStartDate(d30.toISOString().split('T')[0]);
+                      setProfitEndDate(today);
+                    }}
+                    className="text-[10px] px-2.5 py-1 rounded-lg border bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 font-semibold"
+                  >
+                    Last 30 Days
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProfitStartDate('2020-01-01');
+                      setProfitEndDate(today);
+                    }}
+                    className="text-[10px] px-2.5 py-1 rounded-lg border bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 font-semibold"
+                  >
+                    All Time
+                  </button>
+                </div>
+
+                {/* Date Inputs */}
+                <div className="grid grid-cols-2 gap-2.5 pt-1">
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-1">From (Start Date)</label>
+                    <input
+                      type="date"
+                      value={profitStartDate}
+                      max={profitEndDate}
+                      onChange={(e) => setProfitStartDate(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-1">To (End Date)</label>
+                    <input
+                      type="date"
+                      value={profitEndDate}
+                      min={profitStartDate}
+                      max={today}
+                      onChange={(e) => setProfitEndDate(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Profit & Loss KPI Summary Cards */}
+              <div className="grid grid-cols-2 gap-2.5">
+                {/* Total Sales Revenue */}
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl space-y-1">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Total Sales Revenue</span>
+                  <div className="text-base font-black text-sky-400">
+                    ₹{totalPeriodRevenue.toLocaleString('en-IN')}
+                  </div>
+                  <span className="text-[10px] text-slate-500 block">
+                    {profitPeriodSales.length} bills • {totalUnitsSold} units sold
+                  </span>
+                </div>
+
+                {/* Cost of Goods Sold (COGS) */}
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl space-y-1">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Intake / Stock Cost</span>
+                  <div className="text-base font-black text-indigo-300">
+                    ₹{totalPeriodCOGS.toLocaleString('en-IN')}
+                  </div>
+                  <span className="text-[10px] text-slate-500 block">
+                    Purchase &amp; repair cost
+                  </span>
+                </div>
+
+                {/* Gross Profit */}
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl space-y-1">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Gross Profit</span>
+                  <div className={`text-base font-black ${grossProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    ₹{grossProfit.toLocaleString('en-IN')}
+                  </div>
+                  <span className="text-[10px] text-slate-500 block">
+                    Gross Margin: {grossMarginPercent.toFixed(1)}%
+                  </span>
+                </div>
+
+                {/* Operating Expenses */}
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl space-y-1">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Shop Expenses</span>
+                  <div className="text-base font-black text-rose-400">
+                    -₹{totalPeriodExpenses.toLocaleString('en-IN')}
+                  </div>
+                  <span className="text-[10px] text-slate-500 block">
+                    {profitPeriodExpenses.length} expense entries
+                  </span>
+                </div>
+              </div>
+
+              {/* Net Profit Spotlight Banner */}
+              <div className={`p-4 rounded-2xl border flex items-center justify-between shadow-lg ${
+                netProfit >= 0
+                  ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
+                  : 'bg-rose-950/40 border-rose-500/50 text-rose-300'
+              }`}>
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 block">
+                    NET BUSINESS PROFIT ({profitStartDate} to {profitEndDate})
+                  </span>
+                  <div className="text-2xl font-black mt-0.5 tracking-tight">
+                    {netProfit >= 0 ? '+' : ''}₹{netProfit.toLocaleString('en-IN')}
+                  </div>
+                  <span className="text-xs font-semibold opacity-90">
+                    Net Profit Margin: <strong>{netMarginPercent.toFixed(1)}%</strong>
+                  </span>
+                </div>
+                <div className="text-right">
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black ${
+                    netProfit >= 0 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
+                  }`}>
+                    <TrendingUp className="w-6 h-6" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Itemized Sales Table */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold text-slate-200 uppercase tracking-wider">
+                    Itemized Sales in Period ({salesWithCost.length})
+                  </span>
+                </div>
+
+                {salesWithCost.length === 0 ? (
+                  <div className="text-center py-8 text-slate-500 text-xs">
+                    No sales recorded between {profitStartDate} and {profitEndDate}.
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-[48vh] overflow-y-auto pr-0.5">
+                    {salesWithCost.map(({ sale, saleCOGS, saleProfit, saleMargin }, idx) => (
+                      <div key={idx} className="bg-slate-950 border border-slate-800/80 rounded-xl p-3 space-y-1.5 text-xs">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <div className="flex items-center space-x-2">
+                              {sale.invoiceNumber && (
+                                <span className="font-mono text-[10px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded">
+                                  {sale.invoiceNumber}
+                                </span>
+                              )}
+                              <span className="font-bold text-slate-100">{sale.productName}</span>
+                            </div>
+                            <div className="text-[11px] text-slate-400 mt-0.5">
+                              Customer: <span className="text-slate-300 font-semibold">{sale.customerName}</span> • {sale.date}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-black text-sm text-sky-400 block">
+                              ₹{sale.finalAmount.toLocaleString('en-IN')}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              {sale.paymentMode}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Cost vs Selling vs Profit */}
+                        <div className="pt-2 border-t border-slate-900 grid grid-cols-3 gap-1 text-[11px] font-mono">
+                          <div>
+                            <span className="text-slate-500 block text-[9px]">INTAKE COST</span>
+                            <span className="text-slate-300">₹{saleCOGS.toLocaleString('en-IN')}</span>
+                          </div>
+                          <div className="text-center">
+                            <span className="text-slate-500 block text-[9px]">MARGIN</span>
+                            <span className={`font-bold ${saleMargin >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {saleMargin.toFixed(1)}%
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-slate-500 block text-[9px]">PROFIT</span>
+                            <span className={`font-black ${saleProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {saleProfit >= 0 ? '+' : ''}₹{saleProfit.toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* 1. DAILY CLOSING SUBVIEW */}
           {activeSubView === 'CLOSING' && (

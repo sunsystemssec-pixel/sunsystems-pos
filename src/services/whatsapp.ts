@@ -1,4 +1,4 @@
-import { Sale, StockItem } from '../types';
+import { Sale, StockItem, SaleItem } from '../types';
 import { COMPANY_INFO } from '../data/seedData';
 
 export const formatToDDMMYY = (dateStr?: string): string => {
@@ -80,6 +80,34 @@ export const numberToWordsIndian = (amount: number): string => {
   return result ? `Rupees ${result} Only` : 'Rupees Zero Only';
 };
 
+export const getDefaultWarrantyTerms = (items?: SaleItem[], singleCategory?: string): string => {
+  if (items && items.length > 0) {
+    const hasDesktop = items.some(i => (i.category || '').toLowerCase().includes('desktop') || (i.productName || '').toLowerCase().includes('desktop') || (i.productName || '').toLowerCase().includes('cpu') || (i.productName || '').toLowerCase().includes('pc'));
+    const hasLaptop = items.some(i => (i.category || '').toLowerCase().includes('laptop') || (i.productName || '').toLowerCase().includes('laptop') || (i.productName || '').toLowerCase().includes('notebook') || (i.productName || '').toLowerCase().includes('thinkpad') || (i.productName || '').toLowerCase().includes('macbook'));
+
+    if (hasDesktop && !hasLaptop) {
+      return '3-month hardware warranty and 6-month service warranty on desktop. Physical & liquid damage not covered.';
+    }
+    if (hasDesktop && hasLaptop) {
+      return 'Laptops: 1-month testing & 6-month service warranty. Desktops: 3-month hardware & 6-month service warranty. Physical damage not covered.';
+    }
+    if (hasLaptop) {
+      return '1-month testing warranty and 6-month service warranty on every laptop. Physical damage and software issues after purchase are not covered.';
+    }
+    // Only peripherals / parts
+    return '7-day testing warranty only. Burnt, electrical or physical damage not covered.';
+  }
+
+  const cat = (singleCategory || '').toLowerCase();
+  if (cat.includes('desktop')) {
+    return '3-month hardware warranty and 6-month service warranty on desktop. Physical & liquid damage not covered.';
+  }
+  if (cat.includes('laptop')) {
+    return '1-month testing warranty and 6-month service warranty on every laptop. Physical damage and software issues after purchase are not covered.';
+  }
+  return '1-month testing warranty and 6-month service warranty on every laptop. Physical damage and software issues after purchase are not covered.';
+};
+
 export const generateWhatsAppSaleMessage = (sale: Sale, stockItem?: StockItem): string => {
   const divider = '------------------------------------------';
   const formattedDate = formatToDDMMYYYY(sale.date);
@@ -87,6 +115,9 @@ export const generateWhatsAppSaleMessage = (sale: Sale, stockItem?: StockItem): 
   const subtotalStr = `₹${sale.sellingPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const totalStr = `₹${sale.finalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const wordsAmount = numberToWordsIndian(sale.finalAmount);
+  const warrantyText = (sale.warrantyTerms && sale.warrantyTerms.trim()) 
+    ? sale.warrantyTerms.trim() 
+    : getDefaultWarrantyTerms(sale.items, stockItem?.category);
 
   let itemsSection = '';
   if (sale.items && Array.isArray(sale.items) && sale.items.length > 0) {
@@ -161,7 +192,7 @@ ${wordsAmount}
 ${sale.discount > 0 ? `*DISCOUNT:* -₹${sale.discount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` : ''}*TOTAL AMOUNT:* ${totalStr}
 ${divider}
 *WARRANTY & TERMS:*
-1-month testing warranty and 6-month service warranty on every laptop. Physical damage and software issues after purchase are not covered.
+${warrantyText}
 
 _For Sun Systems_
 _AUTHORISED SIGNATORY_`;

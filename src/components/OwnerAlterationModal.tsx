@@ -107,36 +107,224 @@ export const OwnerAlterationModal: React.FC<OwnerAlterationModalProps> = ({
 
         <div className="mt-4 space-y-3">
           {module === 'SALES' && (
-            <>
+            <div className="space-y-3">
+              {/* Line Items Editor (Quantity, Description, Price) */}
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2">
+                <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider block">
+                  Bill Line Items ({formData.items && formData.items.length > 0 ? formData.items.length : 1})
+                </span>
+
+                {formData.items && Array.isArray(formData.items) && formData.items.length > 0 ? (
+                  <div className="space-y-2.5">
+                    {formData.items.map((item: any, idx: number) => (
+                      <div key={idx} className="bg-slate-900 border border-slate-800 rounded-lg p-2.5 space-y-2">
+                        <div className="flex items-center justify-between text-xs font-bold text-slate-200">
+                          <span>#{idx + 1} {item.productName}</span>
+                          <span className="text-emerald-400">₹{(Number(item.quantity || 1) * Number(item.unitPrice || 0)).toLocaleString('en-IN')}</span>
+                        </div>
+
+                        {/* Description Editor */}
+                        <div>
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Description / Specs</label>
+                          <input
+                            type="text"
+                            value={item.description || item.specsSummary || ''}
+                            onChange={(e) => {
+                              const updatedItems = [...formData.items];
+                              updatedItems[idx] = { ...updatedItems[idx], description: e.target.value, specsSummary: e.target.value };
+                              setFormData({ ...formData, items: updatedItems });
+                            }}
+                            placeholder="e.g. Core i5 • 16GB RAM • 512GB SSD"
+                            className="w-full bg-slate-950 border border-slate-700 rounded p-1.5 text-xs text-slate-100 font-mono"
+                          />
+                        </div>
+
+                        {/* Quantity and Price Grid */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[10px] text-slate-400 block mb-0.5">Quantity</label>
+                            <input
+                              type="number"
+                              min="1"
+                              value={item.quantity || 1}
+                              onChange={(e) => {
+                                const newQty = Math.max(1, parseInt(e.target.value) || 1);
+                                const updatedItems = [...formData.items];
+                                updatedItems[idx] = { 
+                                  ...updatedItems[idx], 
+                                  quantity: newQty, 
+                                  amount: newQty * Number(updatedItems[idx].unitPrice || 0) 
+                                };
+                                const newTotal = updatedItems.reduce((acc, it) => acc + (it.amount || 0), 0);
+                                setFormData({ 
+                                  ...formData, 
+                                  items: updatedItems,
+                                  quantity: updatedItems.reduce((a, b) => a + (b.quantity || 1), 0),
+                                  sellingPrice: newTotal,
+                                  finalAmount: Math.max(0, newTotal - (Number(formData.discount) || 0))
+                                });
+                              }}
+                              className="w-full bg-slate-950 border border-slate-700 rounded p-1.5 text-xs text-amber-400 font-bold"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-400 block mb-0.5">Unit Price (₹)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={item.unitPrice || 0}
+                              onChange={(e) => {
+                                const newPrice = Math.max(0, Number(e.target.value));
+                                const updatedItems = [...formData.items];
+                                updatedItems[idx] = { 
+                                  ...updatedItems[idx], 
+                                  unitPrice: newPrice, 
+                                  amount: Number(updatedItems[idx].quantity || 1) * newPrice 
+                                };
+                                const newTotal = updatedItems.reduce((acc, it) => acc + (it.amount || 0), 0);
+                                setFormData({ 
+                                  ...formData, 
+                                  items: updatedItems,
+                                  sellingPrice: newTotal,
+                                  finalAmount: Math.max(0, newTotal - (Number(formData.discount) || 0))
+                                });
+                              }}
+                              className="w-full bg-slate-950 border border-slate-700 rounded p-1.5 text-xs text-slate-100 font-bold"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div>
+                      <label className="text-[10px] text-slate-400 block mb-0.5">Product Name</label>
+                      <input
+                        type="text"
+                        value={formData.productName || ''}
+                        onChange={(e) => setFormData({ ...formData, productName: e.target.value })}
+                        className="w-full bg-slate-950 border border-slate-700 rounded p-1.5 text-xs text-slate-100"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-0.5">Quantity</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={formData.quantity || 1}
+                          onChange={(e) => {
+                            const newQty = Math.max(1, parseInt(e.target.value) || 1);
+                            const uPrice = Number(formData.unitPrice || (formData.sellingPrice / (formData.quantity || 1)) || 0);
+                            const newTotal = newQty * uPrice;
+                            setFormData({
+                              ...formData,
+                              quantity: newQty,
+                              sellingPrice: newTotal,
+                              finalAmount: Math.max(0, newTotal - (Number(formData.discount) || 0))
+                            });
+                          }}
+                          className="w-full bg-slate-950 border border-slate-700 rounded p-1.5 text-xs text-amber-400 font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-0.5">Unit Price (₹)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={formData.unitPrice || Math.round(Number(formData.sellingPrice || 0) / Number(formData.quantity || 1))}
+                          onChange={(e) => {
+                            const newPrice = Math.max(0, Number(e.target.value));
+                            const qty = Number(formData.quantity || 1);
+                            const newTotal = qty * newPrice;
+                            setFormData({
+                              ...formData,
+                              unitPrice: newPrice,
+                              sellingPrice: newTotal,
+                              finalAmount: Math.max(0, newTotal - (Number(formData.discount) || 0))
+                            });
+                          }}
+                          className="w-full bg-slate-950 border border-slate-700 rounded p-1.5 text-xs text-slate-100 font-bold"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Financial Totals */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] text-slate-400 block mb-0.5">Total Selling Price (₹)</label>
+                  <input
+                    type="number"
+                    value={formData.sellingPrice || ''}
+                    onChange={(e) => {
+                      const sp = Number(e.target.value);
+                      setFormData({ 
+                        ...formData, 
+                        sellingPrice: sp, 
+                        finalAmount: Math.max(0, sp - (Number(formData.discount) || 0)) 
+                      });
+                    }}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-100 font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-slate-400 block mb-0.5">Discount (₹)</label>
+                  <input
+                    type="number"
+                    value={formData.discount || 0}
+                    onChange={(e) => {
+                      const disc = Number(e.target.value);
+                      setFormData({ 
+                        ...formData, 
+                        discount: disc, 
+                        finalAmount: Math.max(0, (Number(formData.sellingPrice) || 0) - disc) 
+                      });
+                    }}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-rose-300 font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* Warranty Terms Editor */}
               <div>
-                <label className="text-[11px] text-slate-400">Selling Price (₹)</label>
-                <input
-                  type="number"
-                  value={formData.sellingPrice || ''}
-                  onChange={(e) => setFormData({ ...formData, sellingPrice: Number(e.target.value) })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-100"
+                <label className="text-[11px] text-slate-400 block mb-0.5">Warranty &amp; Terms on Bill</label>
+                <textarea
+                  rows={2}
+                  value={formData.warrantyTerms || ''}
+                  onChange={(e) => setFormData({ ...formData, warrantyTerms: e.target.value })}
+                  placeholder="e.g. 1-month testing warranty and 6-month service warranty..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-100 font-mono resize-none"
                 />
               </div>
-              <div>
-                <label className="text-[11px] text-slate-400">Discount (₹)</label>
-                <input
-                  type="number"
-                  value={formData.discount || 0}
-                  onChange={(e) => setFormData({ ...formData, discount: Number(e.target.value) })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-100"
-                />
+
+              {/* Customer Info */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] text-slate-400 block mb-0.5">Customer Name</label>
+                  <input
+                    type="text"
+                    value={formData.customerName || ''}
+                    onChange={(e) => setFormData({ ...formData, customerName: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-100"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-slate-400 block mb-0.5">Customer Mobile</label>
+                  <input
+                    type="tel"
+                    value={formData.customerMobile || ''}
+                    onChange={(e) => setFormData({ ...formData, customerMobile: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-100"
+                  />
+                </div>
               </div>
+
               <div>
-                <label className="text-[11px] text-slate-400">Customer Name</label>
-                <input
-                  type="text"
-                  value={formData.customerName || ''}
-                  onChange={(e) => setFormData({ ...formData, customerName: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-100"
-                />
-              </div>
-              <div>
-                <label className="text-[11px] text-slate-400">Customer Address (Optional)</label>
+                <label className="text-[11px] text-slate-400 block mb-0.5">Customer Address (Optional)</label>
                 <input
                   type="text"
                   value={formData.customerAddress || ''}
@@ -145,7 +333,7 @@ export const OwnerAlterationModal: React.FC<OwnerAlterationModalProps> = ({
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-100"
                 />
               </div>
-            </>
+            </div>
           )}
 
           {module === 'STOCK' && (

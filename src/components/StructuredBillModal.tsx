@@ -2,11 +2,12 @@ import React, { useState, useMemo } from 'react';
 import { Sale, StockItem } from '../types';
 import { db } from '../services/db';
 import { COMPANY_INFO } from '../data/seedData';
-import { formatToDDMMYY, generateWhatsAppSaleMessage, openWhatsAppInvoice, getCleanWhatsAppNumber, numberToWordsIndian } from '../services/whatsapp';
-import { X, Printer, MessageCircle, Copy, Check, Plus, Smartphone, FileText, Download, Loader2 } from 'lucide-react';
+import { formatToDDMMYY, generateWhatsAppSaleMessage, openWhatsAppInvoice, getCleanWhatsAppNumber, numberToWordsIndian, getDefaultWarrantyTerms } from '../services/whatsapp';
+import { X, Printer, MessageCircle, Copy, Check, Plus, Smartphone, FileText, Download, Loader2, Edit2, Send } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { SunSystemsNative, isNativeApp } from '../services/nativeBridge';
+import { OwnerAlterationModal } from './OwnerAlterationModal';
 
 interface StructuredBillModalProps {
   sale: Sale;
@@ -21,15 +22,17 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
   onClose,
   onNewSale
 }) => {
+  const [currentSale, setCurrentSale] = useState<Sale>(sale);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [targetPhone, setTargetPhone] = useState(sale.customerMobile || '');
   const [copied, setCopied] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const allStock = useMemo(() => db.getStock(), []);
 
-  const cleanPhone = getCleanWhatsAppNumber(targetPhone);
-  const qty = Number(sale.quantity || 1);
-  const unitRate = Number(sale.unitPrice || (sale.sellingPrice / qty));
-  const invoiceNumber = sale.invoiceNumber || sale.id || 'SS-0001';
+  const cleanPhone = getCleanWhatsAppNumber(targetPhone || currentSale.customerMobile || '');
+  const qty = Number(currentSale.quantity || 1);
+  const unitRate = Number(currentSale.unitPrice || (currentSale.sellingPrice / qty));
+  const invoiceNumber = currentSale.invoiceNumber || currentSale.id || 'SS-0001';
 
   // Format date to DD/MM/YYYY matching the PDF example
   const formatInvoiceDate = (dateStr?: string): string => {
@@ -44,10 +47,15 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
     return dateStr;
   };
 
-  const invoiceDate = formatInvoiceDate(sale.date);
+  const invoiceDate = formatInvoiceDate(currentSale.date);
+
+  // Dynamic warranty terms
+  const warrantyText = (currentSale.warrantyTerms && currentSale.warrantyTerms.trim())
+    ? currentSale.warrantyTerms.trim()
+    : getDefaultWarrantyTerms(currentSale.items, stockItem?.category);
 
   // Build clean product description matching the example (e.g. "HP EliteBook 745 G6 (8GB/256GB SSD)")
-  let productDesc = sale.productName;
+  let productDesc = currentSale.productName;
   if (stockItem) {
     const specs: string[] = [];
     if (stockItem.ram && !productDesc.includes(stockItem.ram)) specs.push(stockItem.ram);
@@ -273,9 +281,28 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
       pdf.addImage(imgData, 'PNG', xOffset, margin, printWidth, printHeight);
     }
 
-    const fileName = `SunSystems_Invoice_${invoiceNumber}.pdf`;
-    const blob = pdf.output('blob');
-    return { blob, fileName };
+      const fileName = `SunSystems_Invoice_${invoiceNumber}.pdf`;
+      const blob = pdf.output('blob');
+      return { blob, fileName };
+    };
+
+  const handleDirectWhatsAppText = async () => {
+    const clean = getCleanWhatsAppNumber(targetPhone || currentSale.customerMobile || '');
+    if (!clean) {
+      alert('Please enter a valid 10-digit mobile number for WhatsApp dispatch.');
+      return;
+    }
+    const msg = generateWhatsAppSaleMessage(currentSale, stockItem);
+    if (isNativeApp() && SunSystemsNative.openWhatsAppDirect) {
+      try {
+        const res = await SunSystemsNative.openWhatsAppDirect({ phone: clean, text: msg });
+        if (res && res.success) return;
+      } catch (e) {
+        console.warn('Native direct WhatsApp error:', e);
+      }
+    }
+    const shareUrl = `https://api.whatsapp.com/send?phone=${clean}&text=${encodeURIComponent(msg)}`;
+    window.open(shareUrl, '_blank');
   };
 
   const handleSendWhatsAppPdf = async () => {
@@ -283,7 +310,7 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
     try {
       const res = await generateBillPdfBlob();
       if (!res) {
-        openWhatsAppInvoice(sale, stockItem, targetPhone);
+        openWhatsAppInvoice(currentSale, stockItem, targetPhone);
         return;
       }
 
@@ -306,8 +333,8 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
           reader.readAsDataURL(blob);
           const base64Data = await base64Promise;
 
-          const clean = getCleanWhatsAppNumber(targetPhone);
-          const caption = `Sun Systems CTC - Tax Invoice ${invoiceNumber} (₹${sale.finalAmount.toLocaleString('en-IN')})`;
+          const clean = getCleanWhatsAppNumber(targetPhone || currentSale.customerMobile || '');
+          const caption = `Sun Systems CTC - Tax Invoice ${invoiceNumber} (₹${currentSale.finalAmount.toLocaleString('en-IN')})`;
 
           const shareRes = await SunSystemsNative.sharePdf({
             base64Data,
@@ -355,15 +382,15 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      const clean = getCleanWhatsAppNumber(targetPhone);
-      const promptMsg = `Greetings from Sun Systems CTC!\nTax Invoice ${invoiceNumber} for ₹${sale.finalAmount.toLocaleString('en-IN')} has been generated and the PDF invoice is downloaded to your device.\n\n*Note: Please tap 📎 Paperclip in WhatsApp to attach the downloaded PDF invoice.*`;
+      const clean = getCleanWhatsAppNumber(targetPhone || currentSale.customerMobile || '');
+      const promptMsg = `Greetings from Sun Systems CTC!\nTax Invoice ${invoiceNumber} for ₹${currentSale.finalAmount.toLocaleString('en-IN')} has been generated and the PDF invoice is downloaded to your device.\n\n*Note: Please tap 📎 Paperclip in WhatsApp to attach the downloaded PDF invoice.*`;
       const shareUrl = clean
         ? `https://api.whatsapp.com/send?phone=${clean}&text=${encodeURIComponent(promptMsg)}`
         : `https://api.whatsapp.com/send?text=${encodeURIComponent(promptMsg)}`;
       window.open(shareUrl, '_blank');
     } catch (err: any) {
       console.error('WhatsApp PDF error:', err);
-      openWhatsAppInvoice(sale, stockItem, targetPhone);
+      openWhatsAppInvoice(currentSale, stockItem, targetPhone);
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -408,6 +435,14 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
             </h3>
           </div>
           <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setShowEditModal(true)}
+              className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-700 transition-colors shadow-sm"
+              title="Edit Bill Details (Quantity, Description, Price, Terms)"
+            >
+              <Edit2 className="w-3.5 h-3.5 text-amber-400" />
+              <span>Edit Bill</span>
+            </button>
             <button
               onClick={handleDownloadPdf}
               disabled={isGeneratingPdf}
@@ -496,16 +531,16 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
               BILL TO
             </div>
             <div className="font-bold text-sm sm:text-base text-black">
-              {sale.customerName || 'Customer'}
+              {currentSale.customerName || 'Customer'}
             </div>
-            {sale.customerMobile && (
+            {currentSale.customerMobile && (
               <div className="text-xs text-gray-800">
-                {sale.customerMobile}
+                {currentSale.customerMobile}
               </div>
             )}
-            {sale.customerAddress && (
+            {currentSale.customerAddress && (
               <div className="text-xs text-gray-700 leading-tight">
-                {sale.customerAddress}
+                {currentSale.customerAddress}
               </div>
             )}
           </div>
@@ -522,9 +557,9 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
           <div className="border-t border-dashed border-gray-400" />
 
           {/* Table Body */}
-          {sale.items && sale.items.length > 0 ? (
+          {currentSale.items && currentSale.items.length > 0 ? (
             <div className="divide-y divide-dashed divide-gray-200">
-              {sale.items.map((itm, idx) => {
+              {currentSale.items.map((itm, idx) => {
                 const itmQty = Number(itm.quantity || 1);
                 const itmRate = Number(itm.unitPrice || 0);
                 const itmAmount = Number(itm.amount || (itmRate * itmQty));
@@ -584,7 +619,7 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
               <div className="w-8 pt-0.5">1</div>
               <div className="flex-1 pr-2">
                 <div className="font-semibold text-black">
-                  {sale.productName || productDesc}
+                  {currentSale.productName || productDesc}
                 </div>
                 {(() => {
                   const cat = (stockItem?.category || '').toLowerCase();
@@ -600,8 +635,8 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
                       singleSpecs = stockItem.description.trim();
                     }
                   }
-                  if (!singleSpecs && sale.notes) {
-                    singleSpecs = sale.notes.trim();
+                  if (!singleSpecs && currentSale.notes) {
+                    singleSpecs = currentSale.notes.trim();
                   }
                   return singleSpecs ? (
                     <div className="text-[10px] sm:text-[11px] text-gray-700 mt-0.5 leading-snug">
@@ -609,9 +644,9 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
                     </div>
                   ) : null;
                 })()}
-                {sale.serialNumber && (
+                {currentSale.serialNumber && (
                   <div className="text-[10px] sm:text-[11px] text-gray-600 font-mono mt-0.5">
-                    S/N: {sale.serialNumber}
+                    S/N: {currentSale.serialNumber}
                   </div>
                 )}
               </div>
@@ -622,7 +657,7 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
                 ₹{unitRate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <div className="w-28 text-right pt-0.5 font-bold">
-                ₹{sale.sellingPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ₹{currentSale.sellingPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
             </div>
           )}
@@ -638,7 +673,7 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
                   PAID BY
                 </div>
                 <div className="font-bold text-black uppercase mt-0.5">
-                  {sale.paymentMode || 'CASH'}
+                  {currentSale.paymentMode || 'CASH'}
                 </div>
               </div>
 
@@ -647,7 +682,7 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
                   AMOUNT IN WORDS
                 </div>
                 <div className="font-medium text-black mt-0.5 text-xs sm:text-sm leading-relaxed">
-                  {numberToWordsIndian(sale.finalAmount)}
+                  {numberToWordsIndian(currentSale.finalAmount)}
                 </div>
               </div>
             </div>
@@ -657,15 +692,15 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
               <div className="flex justify-between items-center text-xs sm:text-sm">
                 <span className="font-bold text-gray-700">SUBTOTAL</span>
                 <span className="text-black font-semibold">
-                  ₹{sale.sellingPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ₹{currentSale.sellingPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
 
-              {sale.discount > 0 && (
+              {currentSale.discount > 0 && (
                 <div className="flex justify-between items-center text-xs text-red-600">
                   <span className="font-bold">DISCOUNT</span>
                   <span>
-                    -₹{sale.discount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    -₹{currentSale.discount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
               )}
@@ -675,7 +710,7 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
               <div className="flex justify-between items-center text-sm sm:text-base font-bold text-black pt-1">
                 <span>TOTAL</span>
                 <span className="text-base sm:text-lg">
-                  ₹{sale.finalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ₹{currentSale.finalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
             </div>
@@ -690,10 +725,10 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
             <div className="max-w-[62%] pr-4 space-y-2">
               <div>
                 <div className="text-[11px] font-bold text-black uppercase tracking-wider mb-1">
-                  WARRANTY
+                  WARRANTY &amp; TERMS
                 </div>
-                <p className="text-[10px] sm:text-[11px] text-gray-700 leading-relaxed">
-                  1-month testing warranty and 6-month service warranty on every laptop. Physical damage and software issues after purchase are not covered.
+                <p className="text-[10px] sm:text-[11px] text-gray-700 leading-relaxed whitespace-pre-line">
+                  {warrantyText}
                 </p>
               </div>
             </div>
@@ -731,7 +766,7 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
             )}
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             <input
               type="tel"
               value={targetPhone}
@@ -739,23 +774,36 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
               placeholder="Enter customer 10-digit mobile number"
               className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500"
             />
-            <button
-              onClick={handleSendWhatsAppPdf}
-              disabled={isGeneratingPdf}
-              className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center space-x-1.5 shadow-lg shadow-emerald-600/30 transition-all active:scale-98 shrink-0 font-mono"
-            >
-              {isGeneratingPdf ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin text-white" />
-                  <span>Generating PDF...</span>
-                </>
-              ) : (
-                <>
-                  <MessageCircle className="w-4 h-4 fill-current" />
-                  <span>Send WhatsApp (PDF)</span>
-                </>
-              )}
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleDirectWhatsAppText}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3.5 py-2 rounded-xl text-xs flex items-center space-x-1.5 shadow-lg shadow-emerald-600/30 transition-all active:scale-98 shrink-0 font-mono"
+                title="Directly opens WhatsApp chat even for brand new / unsaved customer number"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>Direct WhatsApp (New No.)</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleSendWhatsAppPdf}
+                disabled={isGeneratingPdf}
+                className="bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-bold px-3.5 py-2 rounded-xl text-xs flex items-center space-x-1.5 shadow-lg shadow-sky-600/30 transition-all active:scale-98 shrink-0 font-mono"
+                title="Share A4 PDF Invoice to WhatsApp"
+              >
+                {isGeneratingPdf ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                    <span>PDF...</span>
+                  </>
+                ) : (
+                  <>
+                    <MessageCircle className="w-3.5 h-3.5 fill-current" />
+                    <span>Send PDF</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
           <div className="flex gap-2 pt-1 font-mono">
@@ -787,6 +835,23 @@ export const StructuredBillModal: React.FC<StructuredBillModalProps> = ({
             )}
           </div>
         </div>
+
+        {/* Owner Alteration Modal for In-Place Bill Editing */}
+        {showEditModal && (
+          <OwnerAlterationModal
+            module="SALES"
+            record={currentSale}
+            currentUser={{ id: '1', name: 'Anand', role: 'OWNER', pin: '215799', isActive: true }}
+            onClose={() => setShowEditModal(false)}
+            onSaveSuccess={() => {
+              const reloaded = db.getSales().find(s => s.id === currentSale.id);
+              if (reloaded) {
+                setCurrentSale(reloaded);
+              }
+              setShowEditModal(false);
+            }}
+          />
+        )}
       </div>
     </div>
   );

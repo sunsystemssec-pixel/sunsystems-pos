@@ -18,6 +18,10 @@ export interface SunSystemsNativePlugin {
     base64Data?: string;
     fileName?: string;
   }): Promise<{ success: boolean; error?: string }>;
+  openWhatsAppDirect?(options: {
+    phone: string;
+    text: string;
+  }): Promise<{ success: boolean; error?: string }>;
 }
 
 export const SunSystemsNative = registerPlugin<SunSystemsNativePlugin>('SunSystemsNative');

@@ -3,7 +3,8 @@ import { User, PaymentMode, StockItem, Sale, SaleItem } from '../types';
 import { db } from '../services/db';
 import { sunAI } from '../services/sunAI';
 import { StructuredBillModal } from './StructuredBillModal';
-import { X, Search, Mic, MicOff, ShoppingBag, Plus, Minus, Check, AlertCircle, Trash2, ArrowLeft, PlusCircle, Edit2, RotateCcw, Calendar, FileText } from 'lucide-react';
+import { getDefaultWarrantyTerms } from '../services/whatsapp';
+import { X, Search, Mic, MicOff, ShoppingBag, Plus, Minus, Check, AlertCircle, Trash2, ArrowLeft, PlusCircle, Edit2, RotateCcw, Calendar, FileText, ShieldCheck } from 'lucide-react';
 
 interface NewSaleModalProps {
   currentUser: User;
@@ -54,6 +55,10 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('UPI');
   const [notes, setNotes] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Warranty & Terms State (Laptops get standard warranty, Desktops/others customizable)
+  const [customWarranty, setCustomWarranty] = useState<string>('');
+  const [isCustomWarrantyEdited, setIsCustomWarrantyEdited] = useState(false);
 
   // Owner on-the-fly custom item creation
   const [showCustomItemModal, setShowCustomItemModal] = useState(false);
@@ -268,6 +273,10 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
   const numDiscount = Number(discount) || 0;
   const grandTotal = Math.max(0, subtotal - numDiscount);
 
+  // Auto-derived or custom warranty
+  const autoWarranty = useMemo(() => getDefaultWarrantyTerms(billItems), [billItems]);
+  const effectiveWarranty = isCustomWarrantyEdited ? customWarranty : autoWarranty;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -298,6 +307,7 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
         customerAddress: customerAddress.trim(),
         paymentMode,
         items: billItems,
+        warrantyTerms: effectiveWarranty,
         stockId: billItems[0]?.stockId,
         notes: notes.trim(),
         date: saleDate,
@@ -896,6 +906,102 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Warranty & Terms Section */}
+            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center space-x-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Warranty &amp; Terms on Bill</span>
+                </span>
+                {isCustomWarrantyEdited && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCustomWarrantyEdited(false);
+                      setCustomWarranty('');
+                    }}
+                    className="text-[10px] text-sky-400 hover:text-sky-300 font-semibold"
+                  >
+                    Reset to Auto
+                  </button>
+                )}
+              </div>
+
+              {/* Quick Preset Buttons */}
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomWarranty('1-month testing warranty and 6-month service warranty on every laptop. Physical damage and software issues after purchase are not covered.');
+                    setIsCustomWarrantyEdited(true);
+                  }}
+                  className={`text-[10px] px-2.5 py-1 rounded-lg border font-semibold transition-all ${
+                    effectiveWarranty.toLowerCase().includes('laptop') && !effectiveWarranty.toLowerCase().includes('desktop')
+                      ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  💻 Laptop Terms (1m test / 6m service)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomWarranty('3-month hardware warranty and 6-month service warranty on desktop. Physical & liquid damage not covered.');
+                    setIsCustomWarrantyEdited(true);
+                  }}
+                  className={`text-[10px] px-2.5 py-1 rounded-lg border font-semibold transition-all ${
+                    effectiveWarranty.toLowerCase().includes('desktop')
+                      ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  🖥️ Desktop Terms (3m hw / 6m service)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomWarranty('7-day testing warranty only. Burnt, electrical or physical damage not covered.');
+                    setIsCustomWarrantyEdited(true);
+                  }}
+                  className={`text-[10px] px-2.5 py-1 rounded-lg border font-semibold transition-all ${
+                    effectiveWarranty.toLowerCase().includes('7-day')
+                      ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  ⚡ Testing Only (7 Days)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomWarranty('No warranty on this item. Sold on as-is basis.');
+                    setIsCustomWarrantyEdited(true);
+                  }}
+                  className={`text-[10px] px-2.5 py-1 rounded-lg border font-semibold transition-all ${
+                    effectiveWarranty.toLowerCase().includes('no warranty')
+                      ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  🚫 No Warranty
+                </button>
+              </div>
+
+              <textarea
+                rows={2}
+                value={effectiveWarranty}
+                onChange={(e) => {
+                  setCustomWarranty(e.target.value);
+                  setIsCustomWarrantyEdited(true);
+                }}
+                placeholder="Specify custom warranty terms for this bill..."
+                className="w-full bg-slate-900 border border-slate-700 focus:border-amber-400 text-slate-100 text-xs p-2.5 rounded-xl outline-none font-mono resize-none"
+              />
+              <span className="text-[9px] text-slate-500 block italic">
+                Appears dynamically on printout, A4 PDF and WhatsApp dispatch.
+              </span>
             </div>
 
             {/* Submit Action */}

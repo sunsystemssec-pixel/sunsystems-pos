@@ -89,6 +89,7 @@ export interface SaleItem {
   quantity: number;
   unitPrice: number;
   amount: number;
+  warrantyTerms?: string;
   isCustomItem?: boolean;
 }
 
@@ -110,6 +111,7 @@ export interface Sale {
   paymentMode: PaymentMode;
   splitDetails?: SplitPaymentDetail[];
   items?: SaleItem[]; // Multi-item sale support
+  warrantyTerms?: string; // Dynamic terms & conditions / warranty
   enteredBy: string;
   stockId?: string;
   status: 'COMPLETED' | 'CANCELLED' | 'PENDING_APPROVAL';
