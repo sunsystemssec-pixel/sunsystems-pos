@@ -255,8 +255,17 @@ export const VoiceTrainingModal: React.FC<VoiceTrainingModalProps> = ({
                   className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold flex items-center space-x-1.5 shadow"
                 >
                   <Mic className="w-3.5 h-3.5" />
-                  <span>Grant Microphone Permission &amp; Retry</span>
+                  <span>Grant Mic Permission &amp; Retry</span>
                 </button>
+                {SunSystemsNative.openAppSettings && (
+                  <button
+                    type="button"
+                    onClick={() => SunSystemsNative.openAppSettings?.()}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-bold flex items-center space-x-1.5 shadow"
+                  >
+                    <span>Open Android Settings</span>
+                  </button>
+                )}
                 <span className="text-[10px] text-slate-400">
                   (When Android asks &quot;Allow to record audio?&quot;, tap &quot;While using the app&quot;)
                 </span>

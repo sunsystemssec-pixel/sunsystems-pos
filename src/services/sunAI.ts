@@ -47,19 +47,25 @@ class SunAIService {
         this.isListening = false;
         onEnd();
 
-        if (res.success && res.transcript && res.transcript.trim()) {
+        if (res && res.success && res.transcript && res.transcript.trim()) {
           onResult(res.transcript.trim());
-        } else if (res.cancelled) {
-          // Stopped by user
-        } else if (res.error) {
-          onError(res.error);
-        } else {
-          onError('No speech detected. Please speak closer to microphone.');
+        } else if (res && res.cancelled) {
+          // Gracefully closed by user
+        } else if (res && res.error) {
+          const errLower = res.error.toLowerCase();
+          if (errLower.includes('cancel') || errLower.includes('no speech')) {
+            // Dismissed by user, clean exit
+          } else {
+            onError(res.error);
+          }
         }
         return;
       } catch (err: any) {
         this.isListening = false;
-        console.warn('Native speech recognition error, falling back to Web Speech', err);
+        onEnd();
+        console.warn('Native speech recognition error', err);
+        onError(err?.message || 'Speech recognition unavailable on this device.');
+        return;
       }
     }
 

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Mic, MicOff, Send, Camera, Plus, Sparkles, SlidersHorizontal } from 'lucide-react';
+import { Mic, MicOff, Send, Camera, Plus, Sparkles, SlidersHorizontal, AlertCircle } from 'lucide-react';
 import { sunAI } from '../services/sunAI';
 import { voiceTraining, VoiceLanguage } from '../services/voiceTraining';
+import { SunSystemsNative } from '../services/nativeBridge';
 
 interface CommandBarProps {
   currentUserRole?: string;
@@ -135,8 +136,20 @@ export const CommandBar: React.FC<CommandBarProps> = ({ currentUserRole, onComma
       </div>
 
       {speechError && (
-        <div className="bg-rose-950/60 border border-rose-800 text-rose-300 text-xs px-3 py-2 rounded-lg mb-3">
-          {speechError}
+        <div className="bg-rose-950/70 border border-rose-800 text-rose-300 text-xs px-3 py-2 rounded-xl mb-3 flex items-center justify-between shadow-lg">
+          <div className="flex items-center space-x-2 flex-1">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span className="font-semibold">{speechError}</span>
+          </div>
+          {SunSystemsNative.openAppSettings && (
+            <button
+              type="button"
+              onClick={() => SunSystemsNative.openAppSettings?.()}
+              className="ml-2 px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-lg text-[11px] shrink-0 shadow"
+            >
+              Open Settings
+            </button>
+          )}
         </div>
       )}
 

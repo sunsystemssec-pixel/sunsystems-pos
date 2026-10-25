@@ -28,6 +28,7 @@ export interface SunSystemsNativePlugin {
     language?: string;
   }): Promise<{ success: boolean; transcript?: string; error?: string; cancelled?: boolean }>;
   stopSpeechRecognition?(): Promise<{ stopped: boolean; success?: boolean }>;
+  openAppSettings?(): Promise<{ success: boolean }>;
 }
 
 export const SunSystemsNative = registerPlugin<SunSystemsNativePlugin>('SunSystemsNative');

@@ -31,7 +31,21 @@ import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import androidx.core.app.ActivityCompat;
 
-@CapacitorPlugin(name = "SunSystemsNative")
+import androidx.activity.result.ActivityResult;
+import com.getcapacitor.PermissionState;
+import com.getcapacitor.annotation.ActivityCallback;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
+
+@CapacitorPlugin(
+    name = "SunSystemsNative",
+    permissions = {
+        @Permission(
+            alias = "microphone",
+            strings = { Manifest.permission.RECORD_AUDIO }
+        )
+    }
+)
 public class SunSystemsNativePlugin extends Plugin {
 
     private SpeechRecognizer speechRecognizer = null;
@@ -39,21 +53,35 @@ public class SunSystemsNativePlugin extends Plugin {
 
     @PluginMethod
     public void requestMicPermission(PluginCall call) {
-        boolean granted = ContextCompat.checkSelfPermission(getContext(), Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
-        if (!granted) {
-            ActivityCompat.requestPermissions(getActivity(), new String[]{
-                Manifest.permission.RECORD_AUDIO,
-                Manifest.permission.MODIFY_AUDIO_SETTINGS
-            }, 201);
+        if (getPermissionState("microphone") != PermissionState.GRANTED) {
+            requestPermissionForAlias("microphone", call, "microphoneCallback");
+        } else {
+            JSObject ret = new JSObject();
+            ret.put("granted", true);
+            call.resolve(ret);
         }
-        JSObject ret = new JSObject();
-        ret.put("granted", granted);
-        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void openAppSettings(PluginCall call) {
+        try {
+            Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Could not open settings: " + e.getMessage());
+        }
     }
 
     @PluginMethod
     public void isSpeechRecognitionAvailable(PluginCall call) {
-        boolean available = SpeechRecognizer.isRecognitionAvailable(getContext());
+        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        PackageManager pm = getContext().getPackageManager();
+        boolean available = pm.queryIntentActivities(intent, 0).size() > 0;
         JSObject ret = new JSObject();
         ret.put("available", available);
         call.resolve(ret);
@@ -61,163 +89,77 @@ public class SunSystemsNativePlugin extends Plugin {
 
     @PluginMethod
     public void startSpeechRecognition(PluginCall call) {
-        if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(getActivity(), new String[]{
-                Manifest.permission.RECORD_AUDIO,
-                Manifest.permission.MODIFY_AUDIO_SETTINGS
-            }, 201);
-            JSObject ret = new JSObject();
-            ret.put("success", false);
-            ret.put("error", "Microphone permission requested. Please tap Allow on screen and try again.");
-            call.resolve(ret);
+        if (getPermissionState("microphone") != PermissionState.GRANTED) {
+            requestPermissionForAlias("microphone", call, "microphoneCallback");
             return;
         }
+        launchSpeechIntent(call);
+    }
 
+    @PermissionCallback
+    private void microphoneCallback(PluginCall call) {
+        if (getPermissionState("microphone") == PermissionState.GRANTED) {
+            launchSpeechIntent(call);
+        } else {
+            JSObject ret = new JSObject();
+            ret.put("success", false);
+            ret.put("error", "Microphone permission is required. Please grant permission in App Settings.");
+            call.resolve(ret);
+        }
+    }
+
+    private void launchSpeechIntent(PluginCall call) {
         String language = call.getString("language", "en-IN");
+        String prompt = "Speak now in English...";
+        if ("hi-IN".equals(language)) {
+            prompt = "बोलिए (हिन्दी)...";
+        } else if ("te-IN".equals(language)) {
+            prompt = "మాట్లాడండి (తెలుగు)...";
+        }
 
-        getActivity().runOnUiThread(() -> {
-            try {
-                if (speechRecognizer != null) {
-                    try {
-                        speechRecognizer.destroy();
-                    } catch (Exception ignored) {}
-                    speechRecognizer = null;
-                }
+        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, language);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, language);
+        intent.putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, language);
+        intent.putExtra(RecognizerIntent.EXTRA_PROMPT, prompt);
+        intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3);
 
-                if (!SpeechRecognizer.isRecognitionAvailable(getContext())) {
-                    JSObject ret = new JSObject();
-                    ret.put("success", false);
-                    ret.put("error", "Speech recognition service not available on this device.");
-                    call.resolve(ret);
-                    return;
-                }
+        try {
+            startActivityForResult(call, intent, "speechResultCallback");
+        } catch (Exception e) {
+            JSObject ret = new JSObject();
+            ret.put("success", false);
+            ret.put("error", "Google Speech recognition is not available on this phone: " + e.getMessage());
+            call.resolve(ret);
+        }
+    }
 
-                activeSpeechCall = call;
-                speechRecognizer = SpeechRecognizer.createSpeechRecognizer(getContext());
-
-                Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, language);
-                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, language);
-                intent.putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, language);
-                intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3);
-
-                speechRecognizer.setRecognitionListener(new RecognitionListener() {
-                    @Override
-                    public void onReadyForSpeech(Bundle params) {}
-
-                    @Override
-                    public void onBeginningOfSpeech() {}
-
-                    @Override
-                    public void onRmsChanged(float rmsdB) {}
-
-                    @Override
-                    public void onBufferReceived(byte[] buffer) {}
-
-                    @Override
-                    public void onEndOfSpeech() {}
-
-                    @Override
-                    public void onError(int error) {
-                        String message;
-                        switch (error) {
-                            case SpeechRecognizer.ERROR_AUDIO:
-                                message = "Audio recording error. Please check microphone.";
-                                break;
-                            case SpeechRecognizer.ERROR_CLIENT:
-                                message = "Client error in speech recognition.";
-                                break;
-                            case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS:
-                                message = "Microphone permission required. Please allow microphone access.";
-                                break;
-                            case SpeechRecognizer.ERROR_NETWORK:
-                                message = "Network connection needed for voice dictation.";
-                                break;
-                            case SpeechRecognizer.ERROR_NETWORK_TIMEOUT:
-                                message = "Voice recognition timed out.";
-                                break;
-                            case SpeechRecognizer.ERROR_NO_MATCH:
-                                message = "No speech detected. Please speak closer to the mic.";
-                                break;
-                            case SpeechRecognizer.ERROR_RECOGNIZER_BUSY:
-                                message = "Speech recognizer is busy. Please try again.";
-                                break;
-                            case SpeechRecognizer.ERROR_SERVER:
-                                message = "Speech recognition server error. Please try again.";
-                                break;
-                            case SpeechRecognizer.ERROR_SPEECH_TIMEOUT:
-                                message = "No speech input heard. Please speak clearly.";
-                                break;
-                            default:
-                                message = "Speech recognition error (" + error + ").";
-                                break;
-                        }
-
-                        if (activeSpeechCall != null) {
-                            JSObject ret = new JSObject();
-                            ret.put("success", false);
-                            ret.put("error", message);
-                            activeSpeechCall.resolve(ret);
-                            activeSpeechCall = null;
-                        }
-                    }
-
-                    @Override
-                    public void onResults(Bundle results) {
-                        ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-                        String bestMatch = (matches != null && !matches.isEmpty()) ? matches.get(0) : "";
-
-                        if (activeSpeechCall != null) {
-                            JSObject ret = new JSObject();
-                            ret.put("success", true);
-                            ret.put("transcript", bestMatch);
-                            activeSpeechCall.resolve(ret);
-                            activeSpeechCall = null;
-                        }
-                    }
-
-                    @Override
-                    public void onPartialResults(Bundle partialResults) {}
-
-                    @Override
-                    public void onEvent(int eventType, Bundle params) {}
-                });
-
-                speechRecognizer.startListening(intent);
-            } catch (Exception e) {
-                if (activeSpeechCall != null) {
-                    JSObject ret = new JSObject();
-                    ret.put("success", false);
-                    ret.put("error", "Failed to start speech recognizer: " + e.getMessage());
-                    activeSpeechCall.resolve(ret);
-                    activeSpeechCall = null;
-                }
+    @ActivityCallback
+    private void speechResultCallback(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        if (result.getResultCode() == android.app.Activity.RESULT_OK && result.getData() != null) {
+            ArrayList<String> matches = result.getData().getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
+            if (matches != null && !matches.isEmpty() && matches.get(0) != null && !matches.get(0).trim().isEmpty()) {
+                JSObject ret = new JSObject();
+                ret.put("success", true);
+                ret.put("transcript", matches.get(0).trim());
+                call.resolve(ret);
+                return;
             }
-        });
+        }
+        JSObject ret = new JSObject();
+        ret.put("success", false);
+        ret.put("cancelled", true);
+        ret.put("error", "No speech recognized or cancelled.");
+        call.resolve(ret);
     }
 
     @PluginMethod
     public void stopSpeechRecognition(PluginCall call) {
-        getActivity().runOnUiThread(() -> {
-            try {
-                if (speechRecognizer != null) {
-                    speechRecognizer.stopListening();
-                    speechRecognizer.destroy();
-                    speechRecognizer = null;
-                }
-            } catch (Exception ignored) {}
-            if (activeSpeechCall != null) {
-                JSObject ret = new JSObject();
-                ret.put("success", false);
-                ret.put("cancelled", true);
-                activeSpeechCall.resolve(ret);
-                activeSpeechCall = null;
-            }
-            JSObject ret = new JSObject();
-            ret.put("stopped", true);
-            call.resolve(ret);
-        });
+        JSObject ret = new JSObject();
+        ret.put("stopped", true);
+        call.resolve(ret);
     }
 
     @PluginMethod
