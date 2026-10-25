@@ -22,6 +22,12 @@ export interface SunSystemsNativePlugin {
     phone: string;
     text: string;
   }): Promise<{ success: boolean; error?: string }>;
+  requestMicPermission?(): Promise<{ granted: boolean }>;
+  isSpeechRecognitionAvailable?(): Promise<{ available: boolean }>;
+  startSpeechRecognition?(options: {
+    language?: string;
+  }): Promise<{ success: boolean; transcript?: string; error?: string; cancelled?: boolean }>;
+  stopSpeechRecognition?(): Promise<{ stopped: boolean; success?: boolean }>;
 }
 
 export const SunSystemsNative = registerPlugin<SunSystemsNativePlugin>('SunSystemsNative');

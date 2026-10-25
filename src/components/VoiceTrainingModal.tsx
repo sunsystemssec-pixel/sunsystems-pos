@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Mic, MicOff, Sparkles, Volume2, Plus, Trash2, Check, ArrowRight, Play, BookOpen, Settings2, Globe } from 'lucide-react';
+import { X, Mic, MicOff, Sparkles, Volume2, Plus, Trash2, Check, ArrowRight, Play, BookOpen, Settings2, Globe, AlertCircle } from 'lucide-react';
 import { voiceTraining, VoiceLanguage, TrainedVoiceKeyword, SUPPORTED_LANGUAGES } from '../services/voiceTraining';
 import { sunAI } from '../services/sunAI';
+import { SunSystemsNative } from '../services/nativeBridge';
 import { User } from '../types';
 
 interface VoiceTrainingModalProps {
@@ -234,8 +235,32 @@ export const VoiceTrainingModal: React.FC<VoiceTrainingModalProps> = ({
           </div>
 
           {testError && (
-            <div className="text-xs bg-rose-950/40 border border-rose-800/60 text-rose-300 px-3 py-2 rounded-xl">
-              ⚠️ {testError}
+            <div className="text-xs bg-rose-950/40 border border-rose-800/60 text-rose-300 p-3 rounded-xl space-y-2">
+              <div className="flex items-center space-x-2">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span className="font-semibold">{testError}</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (SunSystemsNative.requestMicPermission) {
+                      await SunSystemsNative.requestMicPermission();
+                    } else if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                      await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => {});
+                    }
+                    setTestError(null);
+                    handleStartPractice();
+                  }}
+                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold flex items-center space-x-1.5 shadow"
+                >
+                  <Mic className="w-3.5 h-3.5" />
+                  <span>Grant Microphone Permission &amp; Retry</span>
+                </button>
+                <span className="text-[10px] text-slate-400">
+                  (When Android asks &quot;Allow to record audio?&quot;, tap &quot;While using the app&quot;)
+                </span>
+              </div>
             </div>
           )}
 

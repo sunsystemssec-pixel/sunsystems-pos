@@ -1,6 +1,8 @@
 import { db } from './db';
 import { User, Sale, StockItem, Purchase, Expense, CreditEntry, DebitEntry, PaymentMode } from '../types';
 import { voiceTraining, VoiceLanguage } from './voiceTraining';
+import { Capacitor } from '@capacitor/core';
+import { SunSystemsNative } from './nativeBridge';
 
 export interface ParsedTransaction {
   intent: 'SALE' | 'STOCK' | 'PURCHASE' | 'EXPENSE' | 'CREDIT' | 'DEBIT' | 'DAILY_CLOSING' | 'QUERY' | 'ACTION_MODAL' | 'UNKNOWN';
@@ -29,17 +31,52 @@ class SunAIService {
     }
   }
 
-  public startListening(
+  public async startListening(
     onResult: (text: string) => void,
     onError: (err: any) => void,
     onEnd: () => void,
     langCode?: VoiceLanguage | string
   ) {
-    if (!this.recognition) {
-      onError('Speech recognition not supported in this browser. Please use text input or standard mobile Chrome/Safari.');
-      return;
-    }
     const targetLang = (langCode as VoiceLanguage) || voiceTraining.getSelectedLanguage();
+
+    // 1. Try Native Android Speech Recognition via Capacitor plugin
+    if (Capacitor.isNativePlatform() && SunSystemsNative.startSpeechRecognition) {
+      try {
+        this.isListening = true;
+        const res = await SunSystemsNative.startSpeechRecognition({ language: targetLang });
+        this.isListening = false;
+        onEnd();
+
+        if (res.success && res.transcript && res.transcript.trim()) {
+          onResult(res.transcript.trim());
+        } else if (res.cancelled) {
+          // Stopped by user
+        } else if (res.error) {
+          onError(res.error);
+        } else {
+          onError('No speech detected. Please speak closer to microphone.');
+        }
+        return;
+      } catch (err: any) {
+        this.isListening = false;
+        console.warn('Native speech recognition error, falling back to Web Speech', err);
+      }
+    }
+
+    // 2. Fallback to Browser Web Speech API
+    if (!this.recognition) {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        this.recognition = new SpeechRecognition();
+        this.recognition.continuous = false;
+        this.recognition.interimResults = false;
+      } else {
+        this.isListening = false;
+        onError('Speech recognition not available. Please allow microphone permission in Android App settings.');
+        return;
+      }
+    }
+
     this.recognition.lang = targetLang;
     this.isListening = true;
 
@@ -51,7 +88,16 @@ class SunAIService {
 
     this.recognition.onerror = (event: any) => {
       this.isListening = false;
-      onError(event.error);
+      const errType = event.error;
+      let msg = 'Microphone unavailable or permission denied.';
+      if (errType === 'not-allowed') {
+        msg = 'Microphone permission denied. Please allow microphone access in Android settings.';
+      } else if (errType === 'no-speech') {
+        msg = 'No speech detected. Please speak closer to the mic.';
+      } else if (errType === 'network') {
+        msg = 'Internet connection required for speech recognition.';
+      }
+      onError(msg);
     };
 
     this.recognition.onend = () => {
@@ -61,17 +107,22 @@ class SunAIService {
 
     try {
       this.recognition.start();
-    } catch (e) {
+    } catch (e: any) {
       this.isListening = false;
-      onError(e);
+      onError(e?.message || 'Could not access microphone.');
     }
   }
 
   public stopListening() {
-    if (this.recognition && this.isListening) {
-      this.recognition.stop();
-      this.isListening = false;
+    if (Capacitor.isNativePlatform() && SunSystemsNative.stopSpeechRecognition) {
+      SunSystemsNative.stopSpeechRecognition().catch(() => {});
     }
+    if (this.recognition && this.isListening) {
+      try {
+        this.recognition.stop();
+      } catch (ignored) {}
+    }
+    this.isListening = false;
   }
 
   public speak(text: string, langCode?: VoiceLanguage | string) {

@@ -948,7 +948,7 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    setCustomWarranty('3-month hardware warranty and 6-month service warranty on desktop. Physical & liquid damage not covered.');
+                    setCustomWarranty('1-month testing warranty and 6-month service warranty on desktop. Physical damage and software issues after purchase are not covered.');
                     setIsCustomWarrantyEdited(true);
                   }}
                   className={`text-[10px] px-2.5 py-1 rounded-lg border font-semibold transition-all ${
@@ -957,7 +957,7 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
                       : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  🖥️ Desktop Terms (3m hw / 6m service)
+                  🖥️ Desktop Terms (1m test / 6m service)
                 </button>
                 <button
                   type="button"
@@ -996,11 +996,11 @@ export const NewSaleModal: React.FC<NewSaleModalProps> = ({
                   setCustomWarranty(e.target.value);
                   setIsCustomWarrantyEdited(true);
                 }}
-                placeholder="Specify custom warranty terms for this bill..."
+                placeholder="Predefined 1-month testing warranty. Edit or customize warranty terms here..."
                 className="w-full bg-slate-900 border border-slate-700 focus:border-amber-400 text-slate-100 text-xs p-2.5 rounded-xl outline-none font-mono resize-none"
               />
               <span className="text-[9px] text-slate-500 block italic">
-                Appears dynamically on printout, A4 PDF and WhatsApp dispatch.
+                Predefined 1-month testing warranty — fully editable. Appears on printout, A4 PDF and WhatsApp dispatch.
               </span>
             </div>
 

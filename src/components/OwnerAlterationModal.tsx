@@ -291,13 +291,46 @@ export const OwnerAlterationModal: React.FC<OwnerAlterationModalProps> = ({
 
               {/* Warranty Terms Editor */}
               <div>
-                <label className="text-[11px] text-slate-400 block mb-0.5">Warranty &amp; Terms on Bill</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] text-slate-400 font-semibold">Warranty &amp; Terms on Bill (Fully Editable)</label>
+                  <span className="text-[9px] text-amber-400 font-mono">1-month testing default</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 mb-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, warrantyTerms: '1-month testing warranty and 6-month service warranty on every laptop. Physical damage and software issues after purchase are not covered.' })}
+                    className="text-[9px] px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300 hover:text-amber-300"
+                  >
+                    💻 Laptop (1m / 6m)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, warrantyTerms: '1-month testing warranty and 6-month service warranty on desktop. Physical damage and software issues after purchase are not covered.' })}
+                    className="text-[9px] px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300 hover:text-amber-300"
+                  >
+                    🖥️ Desktop (1m / 6m)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, warrantyTerms: '7-day testing warranty only. Burnt, electrical or physical damage not covered.' })}
+                    className="text-[9px] px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300 hover:text-amber-300"
+                  >
+                    ⚡ 7-Day Testing
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, warrantyTerms: 'No warranty on this item. Sold on as-is basis.' })}
+                    className="text-[9px] px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300 hover:text-amber-300"
+                  >
+                    🚫 No Warranty
+                  </button>
+                </div>
                 <textarea
                   rows={2}
                   value={formData.warrantyTerms || ''}
                   onChange={(e) => setFormData({ ...formData, warrantyTerms: e.target.value })}
-                  placeholder="e.g. 1-month testing warranty and 6-month service warranty..."
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-slate-100 font-mono resize-none"
+                  placeholder="Predefined 1-month testing warranty. Edit or enter custom warranty..."
+                  className="w-full bg-slate-950 border border-slate-700 focus:border-amber-400 rounded-lg p-2 text-xs text-slate-100 font-mono resize-none"
                 />
               </div>
 

@@ -86,10 +86,10 @@ export const getDefaultWarrantyTerms = (items?: SaleItem[], singleCategory?: str
     const hasLaptop = items.some(i => (i.category || '').toLowerCase().includes('laptop') || (i.productName || '').toLowerCase().includes('laptop') || (i.productName || '').toLowerCase().includes('notebook') || (i.productName || '').toLowerCase().includes('thinkpad') || (i.productName || '').toLowerCase().includes('macbook'));
 
     if (hasDesktop && !hasLaptop) {
-      return '3-month hardware warranty and 6-month service warranty on desktop. Physical & liquid damage not covered.';
+      return '1-month testing warranty and 6-month service warranty on desktop. Physical damage and software issues after purchase are not covered.';
     }
     if (hasDesktop && hasLaptop) {
-      return 'Laptops: 1-month testing & 6-month service warranty. Desktops: 3-month hardware & 6-month service warranty. Physical damage not covered.';
+      return '1-month testing warranty and 6-month service warranty on laptops and desktops. Physical damage and software issues after purchase are not covered.';
     }
     if (hasLaptop) {
       return '1-month testing warranty and 6-month service warranty on every laptop. Physical damage and software issues after purchase are not covered.';
@@ -100,7 +100,7 @@ export const getDefaultWarrantyTerms = (items?: SaleItem[], singleCategory?: str
 
   const cat = (singleCategory || '').toLowerCase();
   if (cat.includes('desktop')) {
-    return '3-month hardware warranty and 6-month service warranty on desktop. Physical & liquid damage not covered.';
+    return '1-month testing warranty and 6-month service warranty on desktop. Physical damage and software issues after purchase are not covered.';
   }
   if (cat.includes('laptop')) {
     return '1-month testing warranty and 6-month service warranty on every laptop. Physical damage and software issues after purchase are not covered.';
